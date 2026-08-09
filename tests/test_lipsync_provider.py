@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -79,6 +80,53 @@ class MuseTalkJobTests(unittest.TestCase):
             self.assertNotEqual(normalized, avatar)
             with Image.open(normalized) as image:
                 self.assertEqual(image.size, (8, 4))
+
+    def test_valid_motion_video_is_passed_to_musetalk_unchanged(self):
+        self.assertTrue(hasattr(lipsync, "prepare_lipsync_input"))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "motion.mp4"
+            video.write_bytes(b"video")
+            info = {
+                "duration": 2.0,
+                "size": 5,
+                "streams": [
+                    {
+                        "codec_type": "video",
+                        "width": 1920,
+                        "height": 1080,
+                        "r_frame_rate": "25/1",
+                    }
+                ],
+            }
+            with patch.object(lipsync, "validate_video", return_value=info):
+                prepared = lipsync.prepare_lipsync_input(
+                    video, Path(temp_dir) / "talking.mp4"
+                )
+
+        self.assertEqual(prepared, video.resolve())
+
+    def test_motion_video_with_wrong_frame_rate_is_rejected(self):
+        self.assertTrue(hasattr(lipsync, "prepare_lipsync_input"))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            video = Path(temp_dir) / "motion.mp4"
+            video.write_bytes(b"video")
+            info = {
+                "duration": 2.0,
+                "size": 5,
+                "streams": [
+                    {
+                        "codec_type": "video",
+                        "width": 1920,
+                        "height": 1080,
+                        "r_frame_rate": "30/1",
+                    }
+                ],
+            }
+            with patch.object(lipsync, "validate_video", return_value=info):
+                with self.assertRaisesRegex(RuntimeError, "25 fps"):
+                    lipsync.prepare_lipsync_input(
+                        video, Path(temp_dir) / "talking.mp4"
+                    )
 
 
 if __name__ == "__main__":

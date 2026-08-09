@@ -148,6 +148,39 @@ def prepare_even_avatar(avatar_path: Path, output_path: Path) -> Path:
     return normalized
 
 
+def _video_frame_rate(value: object) -> float:
+    text = str(value or "0")
+    if "/" in text:
+        numerator, denominator = text.split("/", 1)
+        denominator_value = float(denominator)
+        return float(numerator) / denominator_value if denominator_value else 0.0
+    return float(text)
+
+
+def prepare_lipsync_input(input_path: Path, output_path: Path) -> Path:
+    """Validate a motion video or normalize a still portrait for MuseTalk."""
+    source = Path(input_path).resolve()
+    if source.suffix.lower() not in {".mp4", ".mov", ".avi", ".mkv"}:
+        return prepare_even_avatar(source, output_path)
+
+    info = validate_video(source)
+    stream = next(
+        item for item in info["streams"] if item.get("codec_type") == "video"
+    )
+    width = int(stream.get("width") or 0)
+    height = int(stream.get("height") or 0)
+    if width % 2 or height % 2:
+        raise RuntimeError(
+            f"MuseTalk video input must have even dimensions, got {width}x{height}"
+        )
+    actual_fps = _video_frame_rate(stream.get("r_frame_rate"))
+    if abs(actual_fps - 25.0) > 0.01:
+        raise RuntimeError(
+            f"MuseTalk video input must be 25 fps, got {actual_fps:g} fps"
+        )
+    return source
+
+
 def generate_lipsync(
     avatar_path: str,
     audio_path: str,
@@ -174,7 +207,7 @@ def generate_lipsync(
         )
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    inference_avatar = prepare_even_avatar(avatar, output)
+    inference_avatar = prepare_lipsync_input(avatar, output)
     job, command, cwd = build_musetalk_job(
         inference_avatar, audio, output, use_fp16=use_fp16
     )
