@@ -221,6 +221,34 @@
   }
   .copy-btn:hover { opacity:0.85; }
   .copy-btn.copied { background:var(--success); }
+
+  @media (max-width:700px) {
+    .topbar {
+      display:grid;
+      grid-template-columns:minmax(0,1fr) auto auto;
+      gap:10px;
+      padding:12px 16px;
+    }
+    .logo { min-width:0;font-size:16px; }
+    .logo-icon { width:32px;height:32px;border-radius:8px; }
+    .tab-nav {
+      grid-column:1 / -1;
+      grid-row:2;
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      width:100%;
+      margin-left:0;
+    }
+    .tab-nav button { min-width:0;padding:7px 4px;font-size:12px; }
+    #envBadge { justify-self:end;min-width:0; }
+    .env-badge { max-width:120px;padding:5px 8px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .spacer { display:none; }
+    .topbar > .btn-ghost { width:34px;height:34px;padding:0;font-size:0 !important; }
+    .topbar > .btn-ghost::before { content:'\1F4C1';font-size:15px; }
+    .layout { padding:16px;gap:16px; }
+    .card { padding:18px;margin-bottom:16px; }
+    .field-row,.motion-controls { grid-template-columns:1fr; }
+  }
 </style>
 </head>
 <body>
