@@ -9,6 +9,10 @@ __pycache__/
 # 模型文件 (太大，不提交)
 voice/models/
 app/backend/providers/lipsync/MuseTalk/
+app/backend/providers/motion/LivePortrait/
+.venv-liveportrait/
+motion/drivers/
+motion/templates/*.pkl
 *.pth
 *.ckpt
 *.safetensors

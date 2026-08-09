@@ -77,6 +77,7 @@ def main() -> int:
             checks.append((module_name, False, str(exc)))
 
     from app.backend.providers.lipsync import missing_musetalk_files
+    from app.backend.providers.motion import missing_liveportrait_files
     from app.backend.providers.media_utils import validate_audio
     from app.backend.providers.voice import build_tts_config
 
@@ -86,6 +87,14 @@ def main() -> int:
 
     missing_musetalk = missing_musetalk_files()
     checks.append(("MuseTalk 1.5 weights", not missing_musetalk, f"missing {len(missing_musetalk)} file(s)"))
+
+    missing_liveportrait = missing_liveportrait_files()
+    liveportrait_detail = f"missing {len(missing_liveportrait)} file(s)"
+    if missing_liveportrait:
+        liveportrait_detail += "; run scripts\\install_liveportrait_runtime.ps1"
+    checks.append(
+        ("LivePortrait natural motion", not missing_liveportrait, liveportrait_detail)
+    )
 
     avatar = PROJECT_ROOT / "avatar" / "avatar.jpg"
     checks.append(("Avatar image", avatar.is_file() and avatar.stat().st_size > 0, str(avatar)))

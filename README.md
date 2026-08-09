@@ -103,3 +103,28 @@ python scripts\check_environment.py
 ```
 
 请仅使用你有权使用的人物图片和声音录音。
+# 自然动作增强
+
+项目支持 `LivePortrait -> MuseTalk 1.5` 双阶段模式。LivePortrait 负责克制的眨眼、眼神、表情和头部微动作，MuseTalk 继续根据克隆语音生成中文口型。默认动作模式为 `natural`，原有仅口型路径可通过 `--motion-mode off` 使用。
+
+LivePortrait 使用独立 Python 3.10 环境，不会改动主项目的 PyTorch 依赖：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_liveportrait_runtime.ps1
+python scripts\check_environment.py
+```
+
+安装脚本固定使用 LivePortrait 提交 `9b294b3d0536135442ea73cb01e6cb3ca7029dd3`，下载官方模型，并从官方示例驱动生成本地 `steady` 动作模板。虚拟环境、第三方源码、权重、驱动视频和动作模板均不会提交到 Git。
+
+命令行示例：
+
+```powershell
+python scripts\pipeline.py --project realism-natural --title "自然口播" --script "大家好，今天我们来聊一个实用的话题。" --motion-mode natural --motion-style steady --motion-intensity 0.35
+python scripts\pipeline.py --project realism-fast --title "快速口播" --script "大家好，今天我们来聊一个实用的话题。" --motion-mode off
+```
+
+如安装脚本提示缺少 Python 3.10，先执行：
+
+```powershell
+winget install Python.Python.3.10
+```
