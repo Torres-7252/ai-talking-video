@@ -16,11 +16,11 @@ $Repository = 'https://github.com/KlingAIResearch/LivePortrait.git'
 function Invoke-External {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
-        [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
+        [Parameter(Mandatory = $true)][string[]]$ArgumentList
     )
-    & $FilePath @Arguments
+    & $FilePath @ArgumentList
     if ($LASTEXITCODE -ne 0) {
-        throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($Arguments -join ' ')"
+        throw "Command failed with exit code ${LASTEXITCODE}: $FilePath $($ArgumentList -join ' ')"
     }
 }
 
@@ -36,7 +36,7 @@ else {
         throw 'Git is required but was not found in PATH.'
     }
     try {
-        Invoke-External py -3.10 -c 'import sys; print(sys.executable)'
+        Invoke-External -FilePath py -ArgumentList @('-3.10', '-c', 'import sys; print(sys.executable)')
     }
     catch {
         throw 'Python 3.10 is required. Install it with: winget install Python.Python.3.10'
@@ -45,14 +45,14 @@ else {
 
 if (-not (Test-Path $Python)) {
     if ($PSCmdlet.ShouldProcess($Venv, 'Create Python 3.10 virtual environment')) {
-        Invoke-External py -3.10 -m venv $Venv
+        Invoke-External -FilePath py -ArgumentList @('-3.10', '-m', 'venv', $Venv)
     }
 }
 
 if (-not (Test-Path (Join-Path $Runtime '.git'))) {
     if ($PSCmdlet.ShouldProcess($Runtime, 'Clone LivePortrait')) {
         New-Item -ItemType Directory -Force -Path (Split-Path $Runtime) | Out-Null
-        Invoke-External git clone $Repository $Runtime
+        Invoke-External -FilePath git -ArgumentList @('clone', $Repository, $Runtime)
     }
 }
 
@@ -67,17 +67,24 @@ if (Test-Path (Join-Path $Runtime '.git')) {
     $CurrentCommit = (& git -C $Runtime rev-parse HEAD).Trim()
     if ($CurrentCommit -ne $Commit) {
         if ($PSCmdlet.ShouldProcess($Runtime, "Checkout pinned commit $Commit")) {
-            Invoke-External git -C $Runtime fetch origin $Commit
-            Invoke-External git -C $Runtime checkout --detach $Commit
+            Invoke-External -FilePath git -ArgumentList @('-C', $Runtime, 'fetch', 'origin', $Commit)
+            Invoke-External -FilePath git -ArgumentList @('-C', $Runtime, 'checkout', '--detach', $Commit)
         }
     }
 }
 
-if ($PSCmdlet.ShouldProcess($Venv, 'Install CUDA PyTorch and LivePortrait dependencies')) {
-    Invoke-External $Python -m pip install --upgrade pip
-    Invoke-External $Python -m pip install torch==2.3.0 torchvision==0.18.0 torchaudio==2.3.0 --index-url https://download.pytorch.org/whl/cu121
-    Invoke-External $Python -m pip install -r (Join-Path $Runtime 'requirements.txt')
-    Invoke-External $Python -m pip install 'huggingface_hub[cli]'
+$DependenciesReady = $false
+if ((Test-Path $Python) -and -not $WhatIfPreference) {
+    & $Python -c "import albucore, torch; assert albucore.__version__ == '0.0.12'; assert torch.__version__.startswith('2.3.0+cu121'); assert torch.cuda.is_available()" 2>$null
+    $DependenciesReady = $LASTEXITCODE -eq 0
+}
+
+if (-not $DependenciesReady -and $PSCmdlet.ShouldProcess($Venv, 'Install CUDA PyTorch and LivePortrait dependencies')) {
+    $Constraints = Join-Path $ProjectRoot 'scripts\liveportrait-constraints.txt'
+    Invoke-External -FilePath $Python -ArgumentList @('-m', 'pip', 'install', '--upgrade', 'pip')
+    Invoke-External -FilePath $Python -ArgumentList @('-m', 'pip', 'install', '-r', (Join-Path $Runtime 'requirements.txt'), '-c', $Constraints)
+    Invoke-External -FilePath $Python -ArgumentList @('-m', 'pip', 'install', 'torch==2.3.0', 'torchvision==0.18.0', 'torchaudio==2.3.0', '--index-url', 'https://download.pytorch.org/whl/cu121')
+    Invoke-External -FilePath $Python -ArgumentList @('-m', 'pip', 'install', 'huggingface_hub[cli]')
 }
 
 $Weights = Join-Path $Runtime 'pretrained_weights'
@@ -91,7 +98,7 @@ if (-not (Test-Path $RequiredWeight)) {
         if (-not (Test-Path $HfCli)) {
             throw "Hugging Face CLI was not installed in $Venv"
         }
-        Invoke-External $HfCli download KlingTeam/LivePortrait --local-dir $Weights --exclude '*.git*' 'README.md' 'docs'
+        Invoke-External -FilePath $HfCli -ArgumentList @('download', 'KlingTeam/LivePortrait', '--local-dir', $Weights, '--include', 'liveportrait/*', 'insightface/*')
     }
 }
 
@@ -106,13 +113,20 @@ if (-not $SkipTemplate) {
     if (-not (Test-Path $Template)) {
         if ($PSCmdlet.ShouldProcess($Template, 'Generate reusable steady motion template')) {
             New-Item -ItemType Directory -Force -Path $Drivers, $Templates, $SetupOutput | Out-Null
-            Copy-Item -LiteralPath $SourceDriver -Destination $Driver -Force
+            $LoopFilter = '[0:v]trim=end_frame=25,setpts=PTS-STARTPTS,split=2[forward][reverse];[reverse]reverse[backward];[forward][backward]concat=n=2:v=1:a=0,fps=25[loop]'
+            Invoke-External -FilePath ffmpeg -ArgumentList @('-hide_banner', '-loglevel', 'error', '-i', $SourceDriver, '-filter_complex', $LoopFilter, '-map', '[loop]', '-an', '-y', $Driver)
+            $PreviousPythonUtf8 = $env:PYTHONUTF8
+            $PreviousPythonIoEncoding = $env:PYTHONIOENCODING
+            $env:PYTHONUTF8 = '1'
+            $env:PYTHONIOENCODING = 'utf-8'
             Push-Location $Runtime
             try {
-                Invoke-External $Python (Join-Path $Runtime 'inference.py') -s $SourcePortrait -d $Driver -o $SetupOutput --driving-multiplier 0.35 --source-max-dim 1280
+                Invoke-External -FilePath $Python -ArgumentList @((Join-Path $Runtime 'inference.py'), '--source', $SourcePortrait, '--driving', $Driver, '--output-dir', $SetupOutput, '--driving-multiplier', '0.35', '--source-max-dim', '1280')
             }
             finally {
                 Pop-Location
+                $env:PYTHONUTF8 = $PreviousPythonUtf8
+                $env:PYTHONIOENCODING = $PreviousPythonIoEncoding
             }
             if (-not (Test-Path $GeneratedTemplate)) {
                 throw "LivePortrait did not create the expected template: $GeneratedTemplate"
@@ -123,6 +137,6 @@ if (-not $SkipTemplate) {
 }
 
 if (-not $WhatIfPreference) {
-    Invoke-External $Python -c "import torch; assert torch.cuda.is_available(); print(torch.__version__, torch.cuda.get_device_name(0))"
+    Invoke-External -FilePath $Python -ArgumentList @('-c', 'import torch; assert torch.cuda.is_available(); print(torch.__version__, torch.cuda.get_device_name(0))')
     Write-Host 'LivePortrait runtime installation completed.' -ForegroundColor Green
 }

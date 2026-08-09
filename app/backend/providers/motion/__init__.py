@@ -26,6 +26,7 @@ _RUNTIME_RELATIVE_FILES = (
     "pretrained_weights/liveportrait/base_models/spade_generator.pth",
     "pretrained_weights/liveportrait/base_models/warping_module.pth",
     "pretrained_weights/liveportrait/retargeting_models/stitching_retargeting_module.pth",
+    "pretrained_weights/liveportrait/landmark.onnx",
     "pretrained_weights/insightface/models/buffalo_l/2d106det.onnx",
     "pretrained_weights/insightface/models/buffalo_l/det_10g.onnx",
 )
@@ -92,6 +93,13 @@ def build_liveportrait_command(
     ]
     expected = output / f"{source.stem}--{driving.stem}.mp4"
     return command, runtime, expected
+
+
+def build_liveportrait_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    environment["PYTHONUTF8"] = "1"
+    environment["PYTHONIOENCODING"] = "utf-8"
+    return environment
 
 
 def _number(value: float) -> str:
@@ -260,6 +268,7 @@ def generate_motion(
         result = subprocess.run(
             command,
             cwd=str(cwd),
+            env=build_liveportrait_environment(),
             capture_output=True,
             text=True,
             timeout=timeout_seconds,

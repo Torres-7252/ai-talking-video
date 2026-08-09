@@ -1,5 +1,6 @@
 import importlib
 import importlib.util
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -75,6 +76,7 @@ class LivePortraitMotionTests(unittest.TestCase):
                     "LivePortrait/pretrained_weights/liveportrait/base_models/spade_generator.pth",
                     "LivePortrait/pretrained_weights/liveportrait/base_models/warping_module.pth",
                     "LivePortrait/pretrained_weights/liveportrait/retargeting_models/stitching_retargeting_module.pth",
+                    "LivePortrait/pretrained_weights/liveportrait/landmark.onnx",
                     "LivePortrait/pretrained_weights/insightface/models/buffalo_l/2d106det.onnx",
                     "LivePortrait/pretrained_weights/insightface/models/buffalo_l/det_10g.onnx",
                     "motion/templates/steady.pkl",
@@ -192,6 +194,15 @@ class LivePortraitMotionTests(unittest.TestCase):
                     python_executable=root / ".venv-liveportrait" / "Scripts" / "python.exe",
                     template_path=root / "steady.pkl",
                 )
+
+    def test_liveportrait_subprocess_forces_utf8_on_windows(self):
+        motion = load_motion_module(self)
+        self.assertTrue(hasattr(motion, "build_liveportrait_environment"))
+        with patch.dict(os.environ, {"PYTHONUTF8": "0", "PYTHONIOENCODING": "gbk"}):
+            environment = motion.build_liveportrait_environment()
+
+        self.assertEqual(environment["PYTHONUTF8"], "1")
+        self.assertEqual(environment["PYTHONIOENCODING"], "utf-8")
 
 
 if __name__ == "__main__":
