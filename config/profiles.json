@@ -4,16 +4,16 @@
       "id": "default",
       "name": "我的声音",
       "provider": "gpt-sovits",
-      "reference_audio": "./voice/references/my_voice.wav",
-      "reference_text": "这是我的参考音频文本"
+      "reference_audio": "./voice/references/default.wav",
+      "reference_text": "大家好，我是AI足球教练。今天我们来聊一个很多球友都关心的问题。"
     }
   ],
   "avatars": [
     {
       "id": "ai_coach",
       "name": "AI足球教练",
-      "path": "./avatar/avatar.mp4",
-      "thumbnail": "./avatar/avatar.png"
+      "path": "./avatar/avatar.jpg",
+      "thumbnail": "./avatar/avatar.jpg"
     }
   ],
   "templates": [
