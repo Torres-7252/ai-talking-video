@@ -2,7 +2,10 @@
 
 import tempfile
 import unittest
+import os
 from pathlib import Path
+
+from PIL import Image
 
 from app.backend.providers import lipsync
 
@@ -55,6 +58,27 @@ class MuseTalkJobTests(unittest.TestCase):
             ],
             89_843_225,
         )
+
+    def test_runtime_environment_prepends_compatibility_modules(self):
+        environment = lipsync.build_musetalk_environment()
+
+        self.assertEqual(
+            Path(environment["PYTHONPATH"].split(os.pathsep)[0]),
+            lipsync.COMPAT_PATH,
+        )
+
+    def test_odd_avatar_is_padded_to_even_png(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            avatar = temp / "avatar.jpg"
+            output = temp / "talking.mp4"
+            Image.new("RGB", (7, 4), "white").save(avatar)
+
+            normalized = lipsync.prepare_even_avatar(avatar, output)
+
+            self.assertNotEqual(normalized, avatar)
+            with Image.open(normalized) as image:
+                self.assertEqual(image.size, (8, 4))
 
 
 if __name__ == "__main__":

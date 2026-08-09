@@ -12,6 +12,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(
+    0,
+    str(PROJECT_ROOT / "app" / "backend" / "providers" / "lipsync" / "compat"),
+)
 
 
 def _command_version(command: list[str]) -> str:
@@ -53,14 +57,21 @@ def main() -> int:
         "fastapi",
         "funasr",
         "librosa",
+        "mmcv",
+        "mmdet",
+        "mmengine",
+        "mmpose",
         "numpy",
         "omegaconf",
         "soundfile",
         "transformers",
         "yaml",
+        "pycocotools",
     ):
         try:
             module = importlib.import_module(module_name)
+            if module_name == "mmpose":
+                importlib.import_module("mmpose.apis")
             checks.append((module_name, True, str(getattr(module, "__version__", "installed"))))
         except Exception as exc:
             checks.append((module_name, False, str(exc)))

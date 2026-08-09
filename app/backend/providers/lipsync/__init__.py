@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -9,12 +10,14 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
+from PIL import Image
 
 from app.backend.providers.media_utils import validate_audio, validate_video
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 MUSETALK_PATH = PROJECT_ROOT / "app" / "backend" / "providers" / "lipsync" / "MuseTalk"
+COMPAT_PATH = PROJECT_ROOT / "app" / "backend" / "providers" / "lipsync" / "compat"
 EXPECTED_MODEL_SIZES = {
     "models/musetalkV15/unet.pth": 3_400_074_924,
     "musetalk/utils/face_detection/detection/sfd/s3fd.pth": 89_843_225,
@@ -119,6 +122,32 @@ def _validate_talking_video(path: Path) -> dict:
     return info
 
 
+def build_musetalk_environment() -> dict[str, str]:
+    """Expose Windows/Python 3.12 compatibility modules to MuseTalk."""
+    environment = os.environ.copy()
+    existing = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = os.pathsep.join(
+        value for value in (str(COMPAT_PATH), existing) if value
+    )
+    return environment
+
+
+def prepare_even_avatar(avatar_path: Path, output_path: Path) -> Path:
+    """Pad odd image dimensions so MuseTalk's H.264 step can encode them."""
+    avatar = Path(avatar_path).resolve()
+    with Image.open(avatar) as image:
+        width, height = image.size
+        if width % 2 == 0 and height % 2 == 0:
+            return avatar
+        config_path, _, _ = _job_paths(Path(output_path).resolve())
+        normalized = config_path.parent / f"{avatar.stem}_even.png"
+        normalized.parent.mkdir(parents=True, exist_ok=True)
+        canvas = Image.new(image.mode, (width + width % 2, height + height % 2))
+        canvas.paste(image, (0, 0))
+        canvas.save(normalized, format="PNG")
+    return normalized
+
+
 def generate_lipsync(
     avatar_path: str,
     audio_path: str,
@@ -145,7 +174,10 @@ def generate_lipsync(
         )
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    job, command, cwd = build_musetalk_job(avatar, audio, output, use_fp16=use_fp16)
+    inference_avatar = prepare_even_avatar(avatar, output)
+    job, command, cwd = build_musetalk_job(
+        inference_avatar, audio, output, use_fp16=use_fp16
+    )
     config_path, _, generated_path = _job_paths(output)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
@@ -158,6 +190,7 @@ def generate_lipsync(
         result = subprocess.run(
             command,
             cwd=str(cwd),
+            env=build_musetalk_environment(),
             capture_output=True,
             text=True,
             timeout=1800,

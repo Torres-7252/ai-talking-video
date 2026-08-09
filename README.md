@@ -21,6 +21,7 @@ pip install -r requirements.txt
 下载 MuseTalk 1.5 及其 VAE、Whisper、人脸检测依赖。下载量为数 GB，脚本支持断点续传：
 
 ```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_musetalk_runtime.ps1
 powershell -ExecutionPolicy Bypass -File scripts\download_musetalk_models.ps1
 ```
 
