@@ -1,6 +1,10 @@
 """Tests for web project path confinement."""
 
+import asyncio
+import inspect
+import json
 import unittest
+from unittest.mock import patch
 
 from scripts import web_server
 
@@ -18,6 +22,73 @@ class WebPathTests(unittest.TestCase):
         path = web_server.resolve_project_file("project", "final.mp4")
         outputs = (web_server.PROJECT_ROOT / "outputs").resolve()
         self.assertTrue(path.is_relative_to(outputs))
+
+
+class WebMotionTests(unittest.TestCase):
+    def setUp(self):
+        web_server.tasks.clear()
+
+    def test_generate_request_preserves_natural_motion_options(self):
+        parameters = inspect.signature(web_server.api_generate).parameters
+        self.assertIn("motion_mode", parameters)
+        self.assertIn("motion_style", parameters)
+        self.assertIn("motion_intensity", parameters)
+        with patch.object(web_server.threading, "Thread"):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="motion test",
+                    script="test script",
+                    voice="default",
+                    speed=1.0,
+                    template="talking_head",
+                    resume=False,
+                    motion_mode="natural",
+                    motion_style="steady",
+                    motion_intensity=0.35,
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.body)
+        task = web_server.tasks[payload["task_id"]]
+        self.assertEqual(task["motion_mode"], "natural")
+        self.assertEqual(task["motion_style"], "steady")
+        self.assertEqual(task["motion_intensity"], 0.35)
+        self.assertIn("LivePortrait 自然动作", [step["name"] for step in task["steps"]])
+
+    def test_generate_request_rejects_invalid_motion_options(self):
+        parameters = inspect.signature(web_server.api_generate).parameters
+        self.assertIn("motion_mode", parameters)
+        with patch.object(web_server.threading, "Thread"):
+            bad_mode = asyncio.run(
+                web_server.api_generate(
+                    title="motion test",
+                    script="test script",
+                    voice="default",
+                    speed=1.0,
+                    template="talking_head",
+                    resume=False,
+                    motion_mode="random",
+                    motion_style="steady",
+                    motion_intensity=0.35,
+                )
+            )
+            bad_intensity = asyncio.run(
+                web_server.api_generate(
+                    title="motion test",
+                    script="test script",
+                    voice="default",
+                    speed=1.0,
+                    template="talking_head",
+                    resume=False,
+                    motion_mode="natural",
+                    motion_style="steady",
+                    motion_intensity=1.5,
+                )
+            )
+
+        self.assertEqual(bad_mode.status_code, 400)
+        self.assertEqual(bad_intensity.status_code, 400)
 
 
 if __name__ == "__main__":

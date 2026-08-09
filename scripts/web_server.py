@@ -181,9 +181,21 @@ async def api_generate(
     speed: float = Form(1.0),
     template: str = Form("talking_head"),
     resume: bool = Form(False),
+    motion_mode: str = Form("natural"),
+    motion_style: str = Form("steady"),
+    motion_intensity: float = Form(0.35),
 ):
     if not title or not script:
         return JSONResponse({"error": "标题和文案不能为空"}, status_code=400)
+    if motion_mode not in {"natural", "off"}:
+        return JSONResponse({"error": f"Invalid motion mode: {motion_mode}"}, status_code=400)
+    if motion_style != "steady":
+        return JSONResponse({"error": f"Invalid motion style: {motion_style}"}, status_code=400)
+    if not 0.0 <= motion_intensity <= 1.0:
+        return JSONResponse(
+            {"error": "Motion intensity must be between 0.0 and 1.0"},
+            status_code=400,
+        )
 
     task_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe = "".join(c for c in title[:30] if c not in '<>:"/\\|?*').strip()
@@ -193,10 +205,14 @@ async def api_generate(
         "id": task_id,
         "project_name": project_name,
         "title": title,
+        "motion_mode": motion_mode,
+        "motion_style": motion_style,
+        "motion_intensity": motion_intensity,
         "status": "running",
         "current_step": "初始化",
         "steps": [
             {"name": "声音生成", "status": "pending", "icon": "voice"},
+            {"name": "LivePortrait 自然动作", "status": "pending", "icon": "motion"},
             {"name": "MuseTalk 1.5口型", "status": "pending", "icon": "lipsync"},
             {"name": "字幕生成", "status": "pending", "icon": "subtitle"},
             {"name": "1080p横屏合成", "status": "pending", "icon": "render"},
@@ -237,6 +253,9 @@ async def api_generate(
                 speed=speed,
                 template=template,
                 resume=resume,
+                motion_mode=motion_mode,
+                motion_style=motion_style,
+                motion_intensity=motion_intensity,
             )
 
             pipeline.step0_setup()
@@ -249,6 +268,20 @@ async def api_generate(
             except Exception as e:
                 update_step("声音生成", "failed")
                 add_log(f"声音生成失败: {e}")
+                raise
+
+            try:
+                update_step("LivePortrait 自然动作", "running")
+                pipeline.step2_motion()
+                motion_status = "done" if motion_mode == "natural" else "skipped"
+                update_step("LivePortrait 自然动作", motion_status)
+                if motion_mode == "natural":
+                    add_log("LivePortrait 自然动作生成完成")
+                else:
+                    add_log("自然动作已关闭，使用快速口型模式")
+            except Exception as e:
+                update_step("LivePortrait 自然动作", "failed")
+                add_log(f"自然动作生成失败: {e}")
                 raise
 
             try:

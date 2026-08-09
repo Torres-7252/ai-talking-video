@@ -82,6 +82,12 @@
   .field textarea { height:110px;resize:vertical;line-height:1.6; }
   .field input:focus,.field textarea:focus,.field select:focus { border-color:var(--border-focus);box-shadow:0 0 0 4px var(--accent-glow); }
   .field-row { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
+  .motion-controls { display:grid;grid-template-columns:1fr 1.4fr;gap:12px;align-items:end;margin-bottom:16px; }
+  .motion-toggle { min-height:42px;display:flex;align-items:center;gap:10px; }
+  .motion-toggle input { width:18px;height:18px;accent-color:var(--accent); }
+  .motion-range { display:grid;grid-template-columns:1fr 42px;gap:10px;align-items:center;min-height:42px; }
+  .motion-range input { width:100%;accent-color:var(--accent); }
+  .motion-value { text-align:right;font-variant-numeric:tabular-nums;color:var(--text-muted);font-size:12px; }
 
   .btn {
     display:inline-flex;align-items:center;justify-content:center;gap:8px;
@@ -123,6 +129,7 @@
   .pipe-step.pending .pipe-indicator { background:#1e1e2a;color:#3d3d50; }
   .pipe-step.running .pipe-indicator { background:var(--accent);color:white;animation:pulse-glow 1.5s infinite; }
   .pipe-step.done .pipe-indicator { background:rgba(52,199,89,0.15);color:var(--success); }
+  .pipe-step.skipped .pipe-indicator { background:rgba(142,142,147,0.15);color:var(--text-muted); }
   .pipe-step.failed .pipe-indicator { background:rgba(255,55,95,0.15);color:var(--danger); }
   .pipe-step .step-label { flex:1; }
   .pipe-step .step-name { font-size:13px;font-weight:500; }
@@ -248,6 +255,16 @@
       <div class="field-row">
         <div class="field"><label>模板</label><select id="template"><option value="football_knowledge">&#9917; 足球知识</option><option value="football_training">&#127939; 足球训练</option><option value="product_promo">&#128176; 产品宣传</option><option value="talking_head">&#127908; 普通口播</option></select></div>
         <div class="field"><label>语速</label><select id="speed"><option value="0.8">0.8x</option><option value="1.0" selected>1.0x</option><option value="1.2">1.2x</option><option value="1.5">1.5x</option></select></div>
+      </div>
+      <div class="motion-controls">
+        <div class="field" style="margin-bottom:0;">
+          <label>自然动作</label>
+          <label class="motion-toggle"><input type="checkbox" id="motionEnabled" checked onchange="updateMotionControls()"><span>LivePortrait</span></label>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label for="motionIntensity">动作强度</label>
+          <div class="motion-range"><input type="range" id="motionIntensity" min="0" max="100" value="35" step="5" oninput="updateMotionControls()"><span class="motion-value" id="motionValue">35%</span></div>
+        </div>
       </div>
       <button class="btn btn-primary" onclick="doGenerate()" id="genBtn">&#9889; 开始生成视频</button>
     </div>
@@ -440,12 +457,20 @@
 
 <script>
 let ws = null, currentTask = null, activeProject = null;
-const STEP_ICONS = { '声音生成':'&#127925;', 'MuseTalk 1.5口型':'&#129302;', '字幕生成':'&#128196;', '1080p横屏合成':'&#127917;', '最终导出':'&#9889;' };
+const STEP_ICONS = { '声音生成':'&#127925;', 'LivePortrait 自然动作':'&#128065;', 'MuseTalk 1.5口型':'&#129302;', '字幕生成':'&#128196;', '1080p横屏合成':'&#127917;', '最终导出':'&#9889;' };
 
 document.addEventListener('DOMContentLoaded', () => {
   connectWS(); loadProjects(); checkEnv(); loadAssets();
   document.getElementById('script').addEventListener('input', updateCharCount);
+  updateMotionControls();
 });
+
+function updateMotionControls() {
+  const enabled = document.getElementById('motionEnabled').checked;
+  const slider = document.getElementById('motionIntensity');
+  slider.disabled = !enabled;
+  document.getElementById('motionValue').textContent = `${slider.value}%`;
+}
 
 function switchTab(tab) {
   document.getElementById('tabCreate').classList.toggle('active', tab==='create');
@@ -589,6 +614,9 @@ async function doGenerate() {
   fd.append('title',title); fd.append('script',script);
   fd.append('template', document.getElementById('template').value);
   fd.append('speed', document.getElementById('speed').value);
+  fd.append('motion_mode', document.getElementById('motionEnabled').checked ? 'natural' : 'off');
+  fd.append('motion_style', 'steady');
+  fd.append('motion_intensity', String(Number(document.getElementById('motionIntensity').value) / 100));
   fd.append('resume', 'true');
   try {
     const r = await fetch('/api/generate',{method:'POST',body:fd}); const d = await r.json();
@@ -603,10 +631,8 @@ async function doGenerate() {
 }
 
 function initPipelineUI() {
-  ['声音生成','MuseTalk 1.5口型','字幕生成','1080p横屏合成','最终导出'].forEach(n => {
-    const el = document.getElementById('step-'+n);
-    if (el) { el.className='pipe-step pending'; el.querySelector('.step-status').textContent='等待中'; }
-  });
+  const names = ['声音生成','LivePortrait 自然动作','MuseTalk 1.5口型','字幕生成','1080p横屏合成','最终导出'];
+  document.getElementById('pipelineSteps').innerHTML = names.map((name, index) => `<div class="pipe-step pending" id="step-${name}"><div class="pipe-indicator">${index + 1}</div><div class="step-label"><div class="step-name">${STEP_ICONS[name] || ''} ${name}</div><div class="step-status">等待中</div></div></div>`).join('');
   document.getElementById('logConsole').innerHTML = '';
 }
 
@@ -617,7 +643,7 @@ function renderTask(t) {
     const el = document.getElementById('step-'+s.name);
     if (!el) return;
     el.className = `pipe-step ${s.status}`;
-    el.querySelector('.step-status').textContent = {pending:'等待中',running:'运行中',done:'已完成',failed:'失败'}[s.status]||s.status;
+    el.querySelector('.step-status').textContent = {pending:'等待中',running:'运行中',done:'已完成',skipped:'已跳过',failed:'失败'}[s.status]||s.status;
   });
   if (t.log) {
     const log = document.getElementById('logConsole');
