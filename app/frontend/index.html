@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI数字人口播视频生成器</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  :root {
+    --bg-primary: #0a0a0f;
+    --bg-card: #13131a;
+    --bg-input: #1a1a24;
+    --border: #252530;
+    --border-focus: #5b6ef5;
+    --text: #e8e8f0;
+    --text-muted: #7a7a8a;
+    --accent: #5b6ef5;
+    --accent-glow: rgba(91,110,245,0.25);
+    --success: #34c759;
+    --warning: #ff9f0a;
+    --danger: #ff375f;
+    --radius: 14px;
+    --radius-sm: 10px;
+  }
+
+  * { margin:0;padding:0;box-sizing:border-box; }
+  body {
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;
+    background:var(--bg-primary); color:var(--text); min-height:100vh;
+    line-height:1.5; overflow-x:hidden;
+  }
+  body::before {
+    content:''; position:fixed; top:-40%; left:-20%; width:80%; height:80%;
+    background:radial-gradient(ellipse, rgba(91,110,245,0.06) 0%, transparent 70%);
+    pointer-events:none; z-index:0;
+  }
+
+  .topbar {
+    position:sticky; top:0; z-index:100;
+    display:flex; align-items:center; gap:12px;
+    padding:14px 32px;
+    background:rgba(10,10,15,0.85); backdrop-filter:blur(20px) saturate(180%);
+    border-bottom:1px solid var(--border);
+  }
+  .logo { display:flex; align-items:center; gap:10px; font-size:18px; font-weight:700; white-space:nowrap; }
+  .logo-icon { width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#5b6ef5,#8b5cf6);display:flex;align-items:center;justify-content:center;font-size:18px;color:white; }
+  .logo span { background:linear-gradient(135deg,#a5b4fc,#c4b5fd); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  .spacer { flex:1; }
+  .env-badge {
+    display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;
+    font-size:13px;background:rgba(52,199,89,0.1);color:var(--success);border:1px solid rgba(52,199,89,0.2);
+  }
+  .env-badge .dot { width:7px;height:7px;border-radius:50%;background:var(--success); }
+  .tab-nav { display:flex;gap:4px;margin-left:16px; }
+  .tab-nav button {
+    background:transparent;border:none;color:var(--text-muted);padding:6px 14px;
+    border-radius:8px;font-size:13px;cursor:pointer;font-family:inherit;transition:all .2s;
+    white-space:nowrap;
+  }
+  .tab-nav button.active,.tab-nav button:hover { background:var(--bg-input);color:var(--text); }
+
+  .layout {
+    display:grid; grid-template-columns:420px 1fr;
+    gap:24px; padding:24px 32px; max-width:1500px; margin:0 auto;
+    position:relative; z-index:1;
+  }
+  @media (max-width:1100px) { .layout { grid-template-columns:1fr; } }
+
+  .card { background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px; }
+  .card-header { display:flex;align-items:center;gap:10px;margin-bottom:20px; }
+  .card-header .icon { width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px; }
+  .card-header h2 { font-size:15px;font-weight:600; }
+  .card-header .badge-count { margin-left:auto;font-size:12px;color:var(--text-muted);background:var(--bg-input);padding:3px 10px;border-radius:10px; }
+
+  .field { margin-bottom:16px; }
+  .field label { display:block;font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px; }
+  .field input,.field textarea,.field select {
+    width:100%;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border);
+    border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:inherit;outline:none;transition:all .2s;
+  }
+  .field textarea { height:110px;resize:vertical;line-height:1.6; }
+  .field input:focus,.field textarea:focus,.field select:focus { border-color:var(--border-focus);box-shadow:0 0 0 4px var(--accent-glow); }
+  .field-row { display:grid;grid-template-columns:1fr 1fr;gap:12px; }
+
+  .btn {
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:12px 24px;border:none;border-radius:var(--radius-sm);
+    font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;font-family:inherit;
+  }
+  .btn-primary { width:100%;background:linear-gradient(135deg,#5b6ef5,#6d28d9);color:white;box-shadow:0 4px 20px rgba(91,110,245,0.3); }
+  .btn-primary:hover { box-shadow:0 6px 30px rgba(91,110,245,0.45);transform:translateY(-1px); }
+  .btn-primary:disabled { opacity:0.5;cursor:not-allowed;transform:none;box-shadow:none; }
+  .btn-ghost { background:transparent;color:var(--text-muted);padding:8px 16px;font-size:13px;border:1px solid var(--border);border-radius:var(--radius-sm); }
+  .btn-ghost:hover { background:var(--bg-input);color:var(--text); }
+
+  /* Upload zones */
+  .upload-zone {
+    border:2px dashed var(--border);border-radius:var(--radius-sm);
+    padding:24px;text-align:center;cursor:pointer;transition:all .2s;
+    background:var(--bg-input);position:relative;
+  }
+  .upload-zone:hover { border-color:var(--accent); }
+  .upload-zone.has-file { border-color:var(--success);border-style:solid;background:rgba(52,199,89,0.03); }
+  .upload-zone.missing { border-color:var(--danger);border-style:solid; }
+  .upload-zone .icon { font-size:32px;margin-bottom:8px; }
+  .upload-zone .hint { font-size:12px;color:var(--text-muted);margin-top:4px; }
+  .upload-zone .status { font-size:13px;font-weight:500;margin-top:4px; }
+  .upload-zone .status.ok { color:var(--success); }
+  .upload-zone .status.no { color:var(--danger); }
+
+  /* Pipeline */
+  .pipeline { display:flex;flex-direction:column;gap:6px; }
+  .pipe-step {
+    display:flex;align-items:center;gap:12px;padding:12px 16px;
+    border-radius:var(--radius-sm);background:var(--bg-input);border:1px solid transparent;transition:all .3s;
+  }
+  .pipe-step.running { border-color:var(--accent);background:rgba(91,110,245,0.06); }
+  .pipe-indicator {
+    width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:14px;flex-shrink:0;
+  }
+  .pipe-step.pending .pipe-indicator { background:#1e1e2a;color:#3d3d50; }
+  .pipe-step.running .pipe-indicator { background:var(--accent);color:white;animation:pulse-glow 1.5s infinite; }
+  .pipe-step.done .pipe-indicator { background:rgba(52,199,89,0.15);color:var(--success); }
+  .pipe-step.failed .pipe-indicator { background:rgba(255,55,95,0.15);color:var(--danger); }
+  .pipe-step .step-label { flex:1; }
+  .pipe-step .step-name { font-size:13px;font-weight:500; }
+  .pipe-step .step-status { font-size:11px;color:var(--text-muted); }
+  @keyframes pulse-glow { 0%,100% { box-shadow:0 0 0 0 var(--accent-glow); } 50% { box-shadow:0 0 0 10px transparent; } }
+
+  .log-console {
+    background:#08080d;border-radius:var(--radius-sm);padding:14px;max-height:220px;overflow-y:auto;
+    font-family:'Cascadia Code','Fira Code','Consolas',monospace;font-size:12px;line-height:1.7;color:var(--text-muted);
+  }
+  .log-line { white-space:pre-wrap;word-break:break-all; }
+  .log-line.error { color:var(--danger); }
+  .log-line.success { color:var(--success); }
+
+  .project-grid {
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+    gap:12px;max-height:400px;overflow-y:auto;
+  }
+  .proj-card {
+    background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);
+    padding:16px;cursor:pointer;transition:all .2s;
+  }
+  .proj-card:hover { border-color:var(--accent);transform:translateY(-2px); }
+  .proj-card.active { border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-glow); }
+
+  .btn-del {
+    background:transparent;border:none;color:var(--text-muted);font-size:14px;
+    cursor:pointer;padding:2px 6px;border-radius:4px;line-height:1;transition:all .15s;
+  }
+  .btn-del:hover { background:var(--danger);color:white; }
+  .proj-card .title { font-size:14px;font-weight:600;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+  .proj-card .meta { font-size:11px;color:var(--text-muted);display:flex;gap:10px; }
+  .proj-card .status-badge { display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;margin-top:8px; }
+  .status-done { background:rgba(52,199,89,0.12);color:var(--success); }
+  .status-partial { background:rgba(255,159,10,0.12);color:var(--warning); }
+  .status-failed { background:rgba(255,55,95,0.12);color:var(--danger); }
+
+  .preview-area {
+    border-radius:var(--radius-sm);overflow:hidden;background:#000;
+    aspect-ratio:9/16;max-height:500px;display:flex;align-items:center;justify-content:center;
+  }
+  .preview-area video { width:100%;height:100%;object-fit:contain; }
+  .preview-empty { text-align:center;color:var(--text-muted);padding:40px; }
+  .preview-empty .icon { font-size:48px;margin-bottom:12px;opacity:0.3; }
+
+  .empty-state { text-align:center;padding:40px 20px;color:var(--text-muted); }
+  .empty-state .icon { font-size:40px;margin-bottom:10px;opacity:0.4; }
+  .empty-state p { font-size:13px; }
+
+  .toast {
+    position:fixed;bottom:24px;right:24px;z-index:200;padding:14px 24px;
+    border-radius:var(--radius-sm);font-size:13px;font-weight:500;
+    animation:slideUp .3s ease;box-shadow:0 20px 60px rgba(0,0,0,0.5);
+  }
+  .toast.success { background:var(--success);color:#000; }
+  .toast.error { background:var(--danger);color:white; }
+  @keyframes slideUp { from { transform:translateY(20px);opacity:0; } to { transform:translateY(0);opacity:1; } }
+
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:var(--border);border-radius:3px; }
+
+  .tips-box {
+    background:rgba(255,159,10,0.06);border:1px solid rgba(255,159,10,0.2);
+    border-radius:var(--radius-sm);padding:14px;margin-bottom:16px;font-size:12px;line-height:1.6;
+  }
+  .tips-box strong { color:var(--warning); }
+  .tips-box a { color:var(--accent);text-decoration:none; }
+  .tips-box a:hover { text-decoration:underline; }
+
+  .guide-section { margin-bottom:20px; }
+  .guide-section h3 { font-size:14px;font-weight:600;margin-bottom:8px; }
+  .guide-section p { font-size:13px;color:var(--text-muted);margin-bottom:6px; }
+  .guide-section ol,.guide-section ul { font-size:13px;color:var(--text-muted);padding-left:20px;margin-bottom:6px; }
+  .guide-section li { margin-bottom:4px; }
+  .guide-section code {
+    background:rgba(91,110,245,0.1);color:var(--accent);padding:2px 6px;border-radius:4px;
+    font-family:'Cascadia Code','Fira Code',monospace;font-size:12px;
+  }
+  .template-block {
+    background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius-sm);
+    padding:14px;margin:10px 0;font-size:13px;line-height:1.8;white-space:pre-wrap;
+    font-family:inherit;color:var(--text);
+  }
+  .copy-btn {
+    position:absolute;top:8px;right:8px;
+    background:var(--accent);color:white;border:none;border-radius:6px;
+    padding:4px 12px;font-size:12px;cursor:pointer;font-family:inherit;transition:all .2s;
+  }
+  .copy-btn:hover { opacity:0.85; }
+  .copy-btn.copied { background:var(--success); }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><div class="logo-icon">&#9654;</div><span>AI口播工厂</span></div>
+  <div class="tab-nav">
+    <button class="active" onclick="switchTab('create')" id="tabCreate">&#9997; 生成视频</button>
+    <button onclick="switchTab('assets')" id="tabAssets">&#9881; 素材管理</button>
+    <button onclick="switchTab('guide')" id="tabGuide">&#128214; 使用指南</button>
+  </div>
+  <div id="envBadge"></div>
+  <div class="spacer"></div>
+  <button class="btn btn-ghost" onclick="openOutputs()" style="font-size:12px;padding:6px 12px;">&#128193; 输出目录</button>
+</div>
+
+<div class="layout">
+  <!-- ============ TAB: CREATE ============ -->
+  <div id="panelCreate">
+    <div class="card">
+      <div class="card-header">
+        <div class="icon" style="background:rgba(91,110,245,0.12)">&#9997;</div>
+        <h2>创建新视频</h2>
+      </div>
+
+      <div id="missingAssetsWarn" class="tips-box" style="display:none;">
+        <strong>&#9888; 素材缺失</strong> — 请先在 <a href="#" onclick="switchTab('assets')">素材管理</a> 上传人物视频和参考音频
+      </div>
+
+      <div class="field"><label>视频标题 <span style="color:var(--danger)">*</span></label><input type="text" id="title" placeholder="e.g. 为什么你的第一脚触球总是停不好？" maxlength="80"></div>
+      <div class="field"><label>口播文案 <span style="color:var(--danger)">*</span></label><textarea id="script" placeholder="输入中文口播文案..." maxlength="2000"></textarea><div style="font-size:11px;color:var(--text-muted);margin-top:4px;text-align:right;"><span id="charCount">0</span>/2000</div></div>
+      <div class="field-row">
+        <div class="field"><label>模板</label><select id="template"><option value="football_knowledge">&#9917; 足球知识</option><option value="football_training">&#127939; 足球训练</option><option value="product_promo">&#128176; 产品宣传</option><option value="talking_head">&#127908; 普通口播</option></select></div>
+        <div class="field"><label>语速</label><select id="speed"><option value="0.8">0.8x</option><option value="1.0" selected>1.0x</option><option value="1.2">1.2x</option><option value="1.5">1.5x</option></select></div>
+      </div>
+      <button class="btn btn-primary" onclick="doGenerate()" id="genBtn">&#9889; 开始生成视频</button>
+    </div>
+
+    <div class="card" id="taskCard" style="display:none;">
+      <div class="card-header"><div class="icon" style="background:rgba(91,110,245,0.12)">&#9201;</div><h2 id="taskTitle">生成中...</h2><span class="badge-count" id="taskStatus">waiting</span></div>
+      <div class="pipeline" id="pipelineSteps"></div>
+      <div style="margin-top:12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">日志</div><div class="log-console" id="logConsole"></div></div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: ASSETS ============ -->
+  <div id="panelAssets" style="display:none;">
+    <div class="card">
+      <div class="card-header"><div class="icon" style="background:rgba(255,159,10,0.12)">&#128100;</div><h2>我的 AI 形象（人物视频）</h2></div>
+      <div id="avatarZone" class="upload-zone missing" onclick="document.getElementById('avatarFile').click()">
+        <div class="icon">&#128249;</div>
+        <div id="avatarName" style="font-weight:500;">点击上传人物视频</div>
+        <div id="avatarStatus" class="status no">未上传</div>
+        <div class="hint">.mp4 / .mov — 正面、胸部以上、背景稳定、嘴部无遮挡 — ≤500MB</div>
+      </div>
+      <input type="file" id="avatarFile" accept="video/mp4,video/mov,video/webm" style="display:none" onchange="uploadAvatar(this.files[0])">
+
+      <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);line-height:1.7;">
+        <strong style="color:var(--text);">怎么录制人物视频？</strong><br>
+        1. 手机支架固定，拍胸部以上正面<br>
+        2. 纯色背景（白墙最佳），光线均匀<br>
+        3. 保持自然表情，轻微点头/眨眼<br>
+        4. 录制 30~60 秒，不说话，嘴巴自然闭合<br>
+        5. 导出 .mp4，通过这里上传
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="icon" style="background:rgba(91,110,245,0.12)">&#127925;</div><h2>我的 AI 声音（参考音频）</h2></div>
+      <div id="voiceZone" class="upload-zone missing" onclick="document.getElementById('voiceFile').click()">
+        <div class="icon">&#127908;</div>
+        <div id="voiceName" style="font-weight:500;">点击上传参考音频</div>
+        <div id="voiceStatus" class="status no">未上传</div>
+        <div class="hint">.wav / .mp3 — 5~10秒清晰中文语音用于克隆音色 — ≤50MB</div>
+      </div>
+      <input type="file" id="voiceFile" accept="audio/*" style="display:none" onchange="uploadVoice(this.files[0])">
+
+      <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);line-height:1.7;">
+        <strong style="color:var(--text);">参考音频模板（照着念）：</strong>
+        <div class="template-block" style="position:relative;margin-top:8px;">
+          <button class="copy-btn" onclick="copyTemplate(this)">复制</button>
+大家好，我是AI足球教练。今天我们来聊一个很多球友都关心的问题——为什么你的第一脚触球总是停不好？其实关键只有三点，掌握了之后你的停球水平一定能上一个台阶。
+        </div>
+        <ul style="margin-top:6px;">
+          <li>用手机录音，安静环境，正常语速</li>
+          <li>念完后保存为 .wav 或 .mp3</li>
+          <li>通过上方上传区域上传</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="icon" style="background:rgba(52,199,89,0.12)">&#9917;</div><h2>足球素材库</h2></div>
+      <div id="footballAssets">加载中...</div>
+    </div>
+  </div>
+
+  <!-- ============ TAB: GUIDE ============ -->
+  <div id="panelGuide" style="display:none;">
+    <div class="card">
+      <div class="card-header"><div class="icon" style="background:rgba(91,110,245,0.12)">&#128214;</div><h2>快速上手</h2></div>
+
+      <div class="guide-section">
+        <h3>&#9312; 准备素材</h3>
+        <ol>
+          <li>切换到 <strong>素材管理</strong> 标签页</li>
+          <li>上传 <strong>人物视频</strong>（30~60秒正面半身，不说话，自然表情）</li>
+          <li>上传 <strong>参考音频</strong>（5~10秒清晰中文语音，照着模板念或自由发挥）</li>
+        </ol>
+      </div>
+
+      <div class="guide-section">
+        <h3>&#9313; 生成视频</h3>
+        <ol>
+          <li>切换到 <strong>生成视频</strong> 标签页</li>
+          <li>填写 <strong>视频标题</strong></li>
+          <li>粘贴 <strong>口播文案</strong>（你的脚本内容）</li>
+          <li>选择 <strong>模板</strong>（足球知识/训练/宣传/普通口播）</li>
+          <li>点击 <strong>开始生成视频</strong></li>
+        </ol>
+      </div>
+
+      <div class="guide-section">
+        <h3>&#9314; 查看结果</h3>
+        <p>生成完成后，右侧 <strong>历史项目</strong> 中会出现新项目，点击即可预览和下载视频。</p>
+        <p>所有中间文件（音频、字幕、原始口型视频等）都可以单独下载。</p>
+      </div>
+    </div>
+
+    <!-- Script Templates -->
+    <div class="card">
+      <div class="card-header"><div class="icon" style="background:rgba(52,199,89,0.12)">&#128221;</div><h2>口播文案模板</h2></div>
+
+      <div class="guide-section">
+        <h3>&#9917; 足球知识模板</h3>
+        <div class="template-block" style="position:relative;">
+          <button class="copy-btn" onclick="copyTemplate(this)">复制</button>
+为什么你的第一脚触球总是停不好？今天告诉你三个关键点。
+
+第一，触球部位要对——很多球友用脚尖去停球，这是最大的错误。正确的做法是用脚内侧去缓冲来球的力量。
+
+第二，接球前的准备动作——在球过来之前，膝盖要微微弯曲，重心下沉，这样你才能快速调整身体位置。
+
+第三，眼睛看着球——听起来很简单，但很多人在接球同时就在想下一步传哪里了。先稳稳接住，再考虑下一步。
+
+记住这三点，下场踢球试试，你的停球一定会有明显进步。关注我，每天一条足球干货。
+        </div>
+      </div>
+
+      <div class="guide-section">
+        <h3>&#127939; 足球训练模板</h3>
+        <div class="template-block" style="position:relative;">
+          <button class="copy-btn" onclick="copyTemplate(this)">复制</button>
+今天的训练内容是——提高你的短传精度。
+
+你需要四个标志碟，在地上摆一个一米乘一米的正方形。距离正方形五米远，开始传地滚球。你的目标是让球停在正方形内。
+
+每组传二十次，休息三十秒，做五组。记住——传球的时候脚面要紧张，身体重心向前，脚内侧要完整地包裹球。
+
+坚持一周，你的短传精度一定能看到明显提升。
+        </div>
+      </div>
+
+      <div class="guide-section">
+        <h3>&#128176; 产品宣传模板</h3>
+        <div class="template-block" style="position:relative;">
+          <button class="copy-btn" onclick="copyTemplate(this)">复制</button>
+作为一名踢了十年球的爱好者，我试过不下二十款足球鞋。
+
+今天给大家推荐一款性价比极高的训练球鞋——它用的是超纤材质，触感和袋鼠皮非常接近，但耐用性碾压真皮。
+
+重点是——鞋底的抓地力非常棒，无论是天然草还是人造草，急停变向都很稳。而且这双鞋只要三百多块，真的对得起这个价格。
+
+链接放在下方了，有兴趣的球友可以去看看。
+        </div>
+      </div>
+    </div>
+
+    <!-- Video Requirements -->
+    <div class="card">
+      <div class="card-header"><div class="icon" style="background:rgba(255,159,10,0.12)">&#9888;</div><h2>人物视频拍摄要求</h2></div>
+
+      <div class="guide-section">
+        <h3>&#9989; 必须做到</h3>
+        <ul>
+          <li>正面面对镜头，胸部以上入镜</li>
+          <li>纯色背景（白色/灰色最佳），背景干净无杂物</li>
+          <li>光线均匀打在脸上，不要有严重阴影</li>
+          <li>自然眨眼、轻微点头，保持放松</li>
+          <li>嘴巴自然闭合，不要张嘴或说话</li>
+          <li>录制 30~60 秒，中间可以有自然停顿</li>
+          <li>横屏或竖屏都可以，系统会自动处理</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3>&#10060; 不要这样</h3>
+        <ul>
+          <li>不要遮挡嘴部（口罩、手等）</li>
+          <li>不要有大幅度的头部转动或身体晃动</li>
+          <li>不要背景有其他人走动</li>
+          <li>不要在光线变化的环境中拍摄</li>
+          <li>不要带墨镜或帽子遮挡面部</li>
+        </ul>
+      </div>
+
+      <div class="guide-section">
+        <h3>&#128247; 拍摄建议</h3>
+        <p>手机加三脚架/支架固定，放在面前约一臂距离。如果室内光线不足，可以开台灯补光到脸部。用手机默认相机录就行，不需要滤镜或美颜。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Column: History + Preview -->
+  <div>
+    <div class="card">
+      <div class="card-header"><div class="icon" style="background:rgba(52,199,89,0.12)">&#128196;</div><h2>历史项目</h2><span class="badge-count" id="projectCount">0</span></div>
+      <div class="project-grid" id="projectGrid"></div>
+      <div class="empty-state" id="projectEmpty"><div class="icon">&#127910;</div><p>暂无项目，在左侧创建第一个视频吧</p></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><div class="icon" style="background:rgba(255,159,10,0.12)">&#9654;</div><h2>视频预览</h2><span id="previewLabel" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span></div>
+      <div id="previewContent">
+        <div class="preview-area"><div class="preview-empty"><div class="icon">&#127916;</div><p>选择项目或生成新视频后预览</p></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let ws = null, currentTask = null, activeProject = null;
+const STEP_ICONS = { '声音生成':'&#127925;', '数字人口型':'&#129302;', '字幕生成':'&#128196;', '视频包装':'&#127917;', '最终导出':'&#9889;' };
+
+document.addEventListener('DOMContentLoaded', () => {
+  connectWS(); loadProjects(); checkEnv(); loadAssets();
+  document.getElementById('script').addEventListener('input', updateCharCount);
+});
+
+function switchTab(tab) {
+  document.getElementById('tabCreate').classList.toggle('active', tab==='create');
+  document.getElementById('tabAssets').classList.toggle('active', tab==='assets');
+  document.getElementById('tabGuide').classList.toggle('active', tab==='guide');
+  document.getElementById('panelCreate').style.display = tab==='create' ? '' : 'none';
+  document.getElementById('panelAssets').style.display = tab==='assets' ? '' : 'none';
+  document.getElementById('panelGuide').style.display = tab==='guide' ? '' : 'none';
+  if (tab==='assets') loadAssets();
+}
+
+function connectWS() {
+  const proto = location.protocol==='https:'?'wss':'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type==='task_update') renderTask(d.task);
+    if (d.type==='task_complete') { renderTask(d.task); loadProjects(); }
+  };
+  ws.onclose = () => setTimeout(connectWS, 2000);
+}
+
+async function checkEnv() {
+  try {
+    const r = await fetch('/api/env'); const d = await r.json();
+    document.getElementById('envBadge').innerHTML = d.cuda
+      ? `<div class="env-badge"><div class="dot"></div>${d.gpu} (${d.vram}MB)</div>`
+      : `<div class="env-badge warn"><div class="dot"></div>CPU</div>`;
+  } catch(e) {}
+}
+
+async function loadAssets() {
+  try {
+    const r = await fetch('/api/assets'); const d = await r.json();
+    ['avatar','voice'].forEach(k => {
+      const zone = document.getElementById(k+'Zone'), name = document.getElementById(k+'Name'), status = document.getElementById(k+'Status');
+      if (!zone) return;
+      if (d[k].exists) {
+        zone.className='upload-zone has-file';
+        name.textContent = k==='avatar'?'avatar.mp4':'default.wav';
+        status.textContent=`已上传 (${d[k].size})`; status.className='status ok';
+      } else {
+        zone.className='upload-zone missing';
+        name.textContent = k==='avatar'?'点击上传人物视频':'点击上传参考音频';
+        status.textContent='未上传'; status.className='status no';
+      }
+    });
+    document.getElementById('missingAssetsWarn').style.display = (d.avatar.exists && d.voice.exists) ? 'none' : '';
+    const fb = document.getElementById('footballAssets');
+    let h = '<div style="font-size:13px;color:var(--text-muted);">';
+    if (d.football_assets?.folders?.length) {
+      h += d.football_assets.folders.map(f=>`<span style="display:inline-block;margin:3px;padding:4px 10px;background:var(--bg-input);border-radius:6px;font-size:12px;">&#128193; ${f}</span>`).join(' ');
+    } else { h += '暂无，将 B-roll 放入 assets/football/'; }
+    h += '</div>'; fb.innerHTML = h;
+  } catch(e) {}
+}
+
+async function uploadAvatar(file) {
+  if (!file) return;
+  const fd = new FormData(); fd.append('file', file);
+  document.getElementById('avatarName').textContent = '上传中...';
+  try {
+    const r = await fetch('/api/assets/avatar', {method:'POST',body:fd}); const d = await r.json();
+    toast(d.ok ? '人物视频上传成功' : (d.error||'失败'), d.ok ? 'success' : 'error');
+  } catch(e) { toast('上传失败: '+e, 'error'); }
+  loadAssets();
+}
+
+async function uploadVoice(file) {
+  if (!file) return;
+  const fd = new FormData(); fd.append('file', file);
+  document.getElementById('voiceName').textContent = '上传中...';
+  try {
+    const r = await fetch('/api/assets/voice', {method:'POST',body:fd}); const d = await r.json();
+    toast(d.ok ? '参考音频上传成功' : (d.error||'失败'), d.ok ? 'success' : 'error');
+  } catch(e) { toast('上传失败: '+e, 'error'); }
+  loadAssets();
+}
+
+async function loadProjects() {
+  try {
+    const r = await fetch('/api/projects');
+    const ps = await r.json();
+    document.getElementById('projectCount').textContent = ps.length;
+    if (!ps.length) { document.getElementById('projectGrid').innerHTML = ''; document.getElementById('projectEmpty').style.display = 'block'; return; }
+    document.getElementById('projectEmpty').style.display = 'none';
+    document.getElementById('projectGrid').innerHTML = ps.map(p=>{
+      const n = Object.values(p.steps).filter(s=>s.status==='done').length||0, f = Object.values(p.steps).some(s=>s.status==='failed');
+      let bc='', bt='';
+      if (p.has_video) { bc='status-done'; bt='已完成'; }
+      else if (f) { bc='status-failed'; bt='失败'; }
+      else if (n>0) { bc='status-partial'; bt=`${n}/5`; }
+      return `<div class="proj-card ${activeProject===p.name?'active':''}" onclick="selectProject('${p.name}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div class="title" style="flex:1;margin-right:6px;">${escHtml(p.title||p.name)}</div>
+          <button class="btn-del" onclick="event.stopPropagation();deleteProject('${p.name}')" title="删除">&#10005;</button>
+        </div>
+        <div class="meta"><span>${p.created?p.created.slice(0,16):''}</span>${p.duration?`<span>${fmtDur(p.duration)}</span>`:''}</div>
+        ${bt?`<div class="status-badge ${bc}">${bt}</div>`:''}
+      </div>`;
+    }).join('');
+  } catch(e) {}
+}
+
+async function selectProject(name) {
+  activeProject = name; loadProjects();
+  document.getElementById('previewLabel').textContent = '';
+  try {
+    const r = await fetch(`/api/projects/${name}`); const p = await r.json();
+    document.getElementById('previewLabel').textContent = p.metadata.title||name;
+    const src = p.files?.final?.url || p.files?.packaged?.url || null;
+    if (src) {
+      document.getElementById('previewContent').innerHTML = `<div class="preview-area"><video controls autoplay loop src="${src}"></video></div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+          ${p.files['final.mp4']?`<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="window.open('/api/projects/${name}/files/final.mp4')">下载 Final</button>`:''}
+          ${p.files['audio.wav']?`<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="window.open('/api/projects/${name}/files/audio.wav')">音频</button>`:''}
+          ${p.files['subtitle.srt']?`<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="window.open('/api/projects/${name}/files/subtitle.srt')">字幕</button>`:''}
+        </div>`;
+    } else {
+      document.getElementById('previewContent').innerHTML = `<div class="preview-area"><div class="preview-empty"><div class="icon">&#9203;</div><p>视频尚未生成</p></div></div>`;
+    }
+  } catch(e) {}
+}
+
+async function deleteProject(name) {
+  if (!confirm(`确定删除项目 "${name}" 吗？此操作不可恢复。`)) return;
+  try {
+    const r = await fetch(`/api/projects/${name}`, { method: 'DELETE' });
+    const d = await r.json();
+    if (d.ok) { toast('项目已删除', 'success'); if (activeProject === name) { activeProject = null; document.getElementById('previewContent').innerHTML = '<div class="preview-area"><div class="preview-empty"><div class="icon">&#127916;</div><p>选择项目或生成新视频后预览</p></div></div>'; } loadProjects(); }
+    else { toast(d.error || '删除失败', 'error'); }
+  } catch(e) { toast('删除失败: ' + e, 'error'); }
+}
+
+async function doGenerate() {
+  const title = document.getElementById('title').value.trim();
+  const script = document.getElementById('script').value.trim();
+  if (!title||!script) { toast('请填写标题和文案','error'); return; }
+  const btn = document.getElementById('genBtn'); btn.disabled = true; btn.innerHTML = '&#9203; 提交中...';
+  const fd = new FormData();
+  fd.append('title',title); fd.append('script',script);
+  fd.append('template', document.getElementById('template').value);
+  fd.append('speed', document.getElementById('speed').value);
+  fd.append('resume', 'true');
+  try {
+    const r = await fetch('/api/generate',{method:'POST',body:fd}); const d = await r.json();
+    if (d.error) { toast(d.error,'error'); btn.disabled=false; btn.innerHTML='&#9889; 开始生成视频'; return; }
+    currentTask = d.task_id;
+    document.getElementById('taskCard').style.display = 'block';
+    document.getElementById('taskTitle').textContent = title;
+    document.getElementById('taskStatus').textContent = '进行中';
+    initPipelineUI(); toast('流水线已启动','success');
+  } catch(e) { toast('提交失败: '+e,'error'); }
+  btn.disabled = false; btn.innerHTML = '&#9889; 开始生成视频';
+}
+
+function initPipelineUI() {
+  ['声音生成','数字人口型','字幕生成','视频包装','最终导出'].forEach(n => {
+    const el = document.getElementById('step-'+n);
+    if (el) { el.className='pipe-step pending'; el.querySelector('.step-status').textContent='等待中'; }
+  });
+  document.getElementById('logConsole').innerHTML = '';
+}
+
+function renderTask(t) {
+  if (!t?.steps) return;
+  document.getElementById('taskStatus').textContent = t.status==='completed'?'已完成':t.status==='failed'?'失败':'进行中';
+  t.steps.forEach(s=>{
+    const el = document.getElementById('step-'+s.name);
+    if (!el) return;
+    el.className = `pipe-step ${s.status}`;
+    el.querySelector('.step-status').textContent = {pending:'等待中',running:'运行中',done:'已完成',failed:'失败'}[s.status]||s.status;
+  });
+  if (t.log) {
+    const log = document.getElementById('logConsole');
+    log.innerHTML = t.log.map(l=>{
+      let c=''; if (/失败|failed|Error/.test(l)) c='error'; else if (/完成/.test(l)) c='success';
+      return `<div class="log-line ${c}">${escHtml(l)}</div>`;
+    }).join('');
+    log.scrollTop = log.scrollHeight;
+  }
+}
+
+function copyTemplate(btn) {
+  const block = btn.parentElement;
+  const text = block.textContent.replace(/复制/,'').trim();
+  navigator.clipboard.writeText(text.split('\n').filter(l=>l.trim()).join('\n')).then(()=>{
+    btn.textContent = '已复制'; btn.classList.add('copied');
+    setTimeout(()=>{ btn.textContent='复制'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+
+function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+function fmtDur(s) { return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }
+function updateCharCount() { document.getElementById('charCount').textContent = document.getElementById('script').value.length; }
+function openOutputs() { window.open('/api/projects'); }
+function toast(m,t) { const el=document.createElement('div'); el.className=`toast ${t}`; el.textContent=m; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); }
+
+setInterval(()=>{ if (document.getElementById('panelCreate').style.display!=='none') loadProjects(); }, 10000);
+</script>
+</body>
+</html>

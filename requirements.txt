@@ -1,0 +1,42 @@
+# AI数字人口播视频生成器 - Python依赖
+# ==========================================
+
+# PyTorch (CUDA 12.4)
+torch>=2.5.0
+torchvision>=0.20.0
+torchaudio>=2.5.0
+
+# 核心
+numpy>=1.26.0
+opencv-python>=4.10.0
+pillow>=10.0.0
+scipy>=1.14.0
+soundfile>=0.12.0
+librosa>=0.10.0
+
+# GPT-SoVITS
+# 参考其官方 requirements.txt
+
+# MuseTalk
+# 参考其官方 requirements.txt
+
+# FunASR
+funasr>=1.0.0
+modelscope>=1.20.0
+
+# 视频处理
+moviepy>=2.0.0
+av>=12.0.0
+
+# Web
+fastapi>=0.115.0
+uvicorn>=0.30.0
+jinja2>=3.1.0
+python-multipart>=0.0.12
+
+# 工具
+python-dotenv>=1.0.0
+pyyaml>=6.0.0
+pathlib2>=2.3.0
+pydantic>=2.0.0
+rich>=13.0.0

@@ -1,0 +1,68 @@
+# AI数字人口播视频生成器 - 配置文件
+project:
+  name: "AI数字人口播视频生成器"
+  version: "0.1.0"
+  output_dir: "./outputs"
+
+gpu:
+  device: "cuda"
+  fp16: true
+  memory_limit: 6144  # MB, RTX 4060 Laptop 8GB
+  auto_unload: true
+
+voice:
+  provider: "gpt-sovits"
+  api_url: "http://127.0.0.1:9880"
+  default_speed: 1.0
+  default_profile: "default"
+  # 可选: cosyvoice, elevenlabs, azure-tts
+
+lipsync:
+  provider: "musetalk"
+  avatar_path: "./avatar/avatar.mp4"
+  cache_dir: "./avatar/cache"
+  preprocess_once: true
+  # 可选: wav2lip, sadtalker
+
+subtitle:
+  provider: "funasr"
+  model: "iic/speech_paraformer-large-vad-punc_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+  output_srt: true
+  output_json: true
+
+render:
+  provider: "hyperframes"
+  width: 1080
+  height: 1920
+  fps: 30
+  font_size: 48
+  highlight_color: "#FFD700"
+  subtitle_position: "bottom-center"
+  safe_area_bottom: 200
+
+output:
+  codec: "libx264"
+  audio_codec: "aac"
+  width: 1080
+  height: 1920
+  fps: 30
+  crf: 23
+  preset: "medium"
+
+templates:
+  football_knowledge:
+    title_style: "足球知识"
+    show_logo: true
+    bgm: "football_bgm.mp3"
+  football_training:
+    title_style: "足球训练"
+    show_logo: true
+    bgm: "training_bgm.mp3"
+  product_promo:
+    title_style: "产品宣传"
+    show_logo: true
+    bgm: "promo_bgm.mp3"
+  talking_head:
+    title_style: "普通口播"
+    show_logo: false
+    bgm: "default_bgm.mp3"

@@ -1,0 +1,69 @@
+{
+  "voices": [
+    {
+      "id": "default",
+      "name": "我的声音",
+      "provider": "gpt-sovits",
+      "reference_audio": "./voice/references/my_voice.wav",
+      "reference_text": "这是我的参考音频文本"
+    }
+  ],
+  "avatars": [
+    {
+      "id": "ai_coach",
+      "name": "AI足球教练",
+      "path": "./avatar/avatar.mp4",
+      "thumbnail": "./avatar/avatar.png"
+    }
+  ],
+  "templates": [
+    {
+      "id": "football_knowledge",
+      "name": "足球知识",
+      "description": "足球知识科普口播",
+      "config": {
+        "title_enabled": true,
+        "subtitle_style": "large_keyword",
+        "logo_enabled": true,
+        "bgm_enabled": true,
+        "auto_broll": true
+      }
+    },
+    {
+      "id": "football_training",
+      "name": "足球训练",
+      "description": "足球训练教学内容",
+      "config": {
+        "title_enabled": true,
+        "subtitle_style": "large_keyword",
+        "logo_enabled": true,
+        "bgm_enabled": true,
+        "auto_broll": true
+      }
+    },
+    {
+      "id": "product_promo",
+      "name": "产品宣传",
+      "description": "产品推广短视频",
+      "config": {
+        "title_enabled": true,
+        "subtitle_style": "centered_large",
+        "logo_enabled": true,
+        "bgm_enabled": true,
+        "auto_broll": false
+      }
+    },
+    {
+      "id": "talking_head",
+      "name": "普通口播",
+      "description": "普通AI数字人口播",
+      "config": {
+        "title_enabled": false,
+        "subtitle_style": "bottom_standard",
+        "logo_enabled": false,
+        "bgm_enabled": false,
+        "auto_broll": false
+      }
+    }
+  ]
+}

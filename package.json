@@ -1,0 +1,10 @@
+{
+  "name": "ai-talking-video",
+  "version": "0.1.0",
+  "description": "AI数字人口播视频生成器",
+  "scripts": {
+    "dev": "cd app/frontend && npm run dev",
+    "build": "cd app/frontend && npm run build"
+  },
+  "dependencies": {}
+}
