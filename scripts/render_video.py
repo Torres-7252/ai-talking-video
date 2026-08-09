@@ -1,29 +1,25 @@
 #!/usr/bin/env python3
-"""独立视频渲染"""
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app" / "backend" / "providers"))
+"""Render the final 1920x1080 subtitled video."""
 
 import argparse
+import sys
 from pathlib import Path
-from render import render_video
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.backend.providers.render import render_video
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Render a landscape talking video")
+    parser.add_argument("--video", "--talking", dest="video", required=True)
+    parser.add_argument("--subtitles", required=True, help="Timed subtitle JSON")
+    parser.add_argument("--output", default=str(PROJECT_ROOT / "outputs" / "render_test" / "final.mp4"))
+    args = parser.parse_args()
+    render_video(args.video, args.subtitles, args.output)
+
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--talking", required=True, help="MuseTalk 输出视频")
-    parser.add_argument("--subtitles", required=True, help="FunASR JSON 字幕")
-    parser.add_argument("--output", default="./outputs/render_test/packaged.mp4")
-    parser.add_argument("--title", default="AI数字人口播")
-    parser.add_argument("--logo", default="./assets/logo/logo.png")
-    parser.add_argument("--bgm", default=None)
-    parser.add_argument("--template", default="talking_head")
-    args = parser.parse_args()
-
-    render_video(
-        talking_video=args.talking,
-        subtitle_json=args.subtitles,
-        output_path=args.output,
-        title=args.title,
-        logo_path=args.logo if Path(args.logo).exists() else None,
-        bgm_path=args.bgm,
-        template=args.template,
-    )
+    main()

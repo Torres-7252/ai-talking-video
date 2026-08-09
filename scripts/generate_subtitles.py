@@ -1,21 +1,34 @@
 #!/usr/bin/env python3
-"""独立生成字幕"""
-import sys
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app" / "backend" / "providers"))
+"""Generate local FunASR subtitles."""
 
 import argparse
+import sys
 from pathlib import Path
-from subtitle import generate_subtitles
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.backend.providers.subtitle import generate_subtitles
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Generate timed subtitles with FunASR")
     parser.add_argument("--audio", required=True)
-    parser.add_argument("--output", default="./outputs/subtitle_test/")
+    parser.add_argument("--output", default=str(PROJECT_ROOT / "outputs" / "subtitle_test" / "subtitle.json"))
+    parser.add_argument("--device", default="cuda", choices=("cuda", "cpu"))
     args = parser.parse_args()
 
-    out_dir = Path(args.output)
+    output = Path(args.output)
+    if output.suffix.lower() != ".json":
+        output = output / "subtitle.json"
     generate_subtitles(
         audio_path=args.audio,
-        output_json=str(out_dir / "subtitle.json"),
-        output_srt=str(out_dir / "subtitle.srt"),
+        output_json=str(output),
+        output_srt=str(output.with_suffix(".srt")),
+        device=args.device,
     )
+
+
+if __name__ == "__main__":
+    main()
