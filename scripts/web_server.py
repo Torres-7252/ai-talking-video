@@ -31,6 +31,28 @@ tasks: dict = {}
 ws_clients: list[WebSocket] = []
 
 
+def _safe_path_component(value: str, label: str) -> str:
+    if not value or value in {".", ".."} or Path(value).name != value:
+        raise ValueError(f"Invalid {label}: {value!r}")
+    return value
+
+
+def resolve_project_dir(project_name: str) -> Path:
+    outputs = (PROJECT_ROOT / "outputs").resolve()
+    project = (outputs / _safe_path_component(project_name, "project name")).resolve()
+    if project == outputs or not project.is_relative_to(outputs):
+        raise ValueError(f"Project path escapes outputs: {project_name!r}")
+    return project
+
+
+def resolve_project_file(project_name: str, filename: str) -> Path:
+    project = resolve_project_dir(project_name)
+    target = (project / _safe_path_component(filename, "filename")).resolve()
+    if target.parent != project:
+        raise ValueError(f"File path escapes project: {filename!r}")
+    return target
+
+
 def get_projects():
     outputs_dir = PROJECT_ROOT / "outputs"
     projects = []
@@ -76,7 +98,10 @@ async def api_projects():
 
 @app.get("/api/projects/{project_name}")
 async def api_project_detail(project_name: str):
-    proj_dir = PROJECT_ROOT / "outputs" / project_name
+    try:
+        proj_dir = resolve_project_dir(project_name)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     if not proj_dir.exists():
         return JSONResponse({"error": "项目不存在"}, status_code=404)
 
@@ -99,7 +124,10 @@ async def api_project_detail(project_name: str):
 
 @app.get("/api/projects/{project_name}/files/{filename}")
 async def api_project_file(project_name: str, filename: str):
-    file_path = PROJECT_ROOT / "outputs" / project_name / filename
+    try:
+        file_path = resolve_project_file(project_name, filename)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     if not file_path.exists():
         return JSONResponse({"error": "文件不存在"}, status_code=404)
     return FileResponse(str(file_path))
@@ -108,7 +136,10 @@ async def api_project_file(project_name: str, filename: str):
 @app.delete("/api/projects/{project_name}")
 async def api_delete_project(project_name: str):
     """删除项目目录"""
-    proj_dir = PROJECT_ROOT / "outputs" / project_name
+    try:
+        proj_dir = resolve_project_dir(project_name)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
     if not proj_dir.exists():
         return JSONResponse({"error": "项目不存在"}, status_code=404)
 
@@ -166,9 +197,9 @@ async def api_generate(
         "current_step": "初始化",
         "steps": [
             {"name": "声音生成", "status": "pending", "icon": "voice"},
-            {"name": "数字人口型", "status": "pending", "icon": "lipsync"},
+            {"name": "MuseTalk 1.5口型", "status": "pending", "icon": "lipsync"},
             {"name": "字幕生成", "status": "pending", "icon": "subtitle"},
-            {"name": "视频包装", "status": "pending", "icon": "render"},
+            {"name": "1080p横屏合成", "status": "pending", "icon": "render"},
             {"name": "最终导出", "status": "pending", "icon": "export"},
         ],
         "log": [],
@@ -221,12 +252,12 @@ async def api_generate(
                 raise
 
             try:
-                update_step("数字人口型", "running")
+                update_step("MuseTalk 1.5口型", "running")
                 pipeline.step2_lipsync()
-                update_step("数字人口型", "done")
+                update_step("MuseTalk 1.5口型", "done")
                 add_log("数字人口型同步完成")
             except Exception as e:
-                update_step("数字人口型", "failed")
+                update_step("MuseTalk 1.5口型", "failed")
                 add_log(f"口型同步失败: {e}")
                 raise
 
@@ -241,12 +272,12 @@ async def api_generate(
                 raise
 
             try:
-                update_step("视频包装", "running")
+                update_step("1080p横屏合成", "running")
                 pipeline.step4_render()
-                update_step("视频包装", "done")
+                update_step("1080p横屏合成", "done")
                 add_log("视频包装完成")
             except Exception as e:
-                update_step("视频包装", "failed")
+                update_step("1080p横屏合成", "failed")
                 add_log(f"视频包装失败: {e}")
                 raise
 
@@ -322,8 +353,7 @@ async def api_env_summary():
 @app.get("/api/assets")
 async def api_assets_status():
     """检查素材状态"""
-    avatar_mp4 = PROJECT_ROOT / "avatar" / "avatar.mp4"
-    avatar_png = PROJECT_ROOT / "avatar" / "avatar.png"
+    avatar_image = PROJECT_ROOT / "avatar" / "avatar.jpg"
     ref_audio = PROJECT_ROOT / "voice" / "references" / "default.wav"
 
     def get_size(p):
@@ -337,10 +367,10 @@ async def api_assets_status():
 
     return JSONResponse({
         "avatar": {
-            "path": str(avatar_mp4),
-            "exists": avatar_mp4.exists(),
-            "size": fmt_size(get_size(avatar_mp4)),
-            "thumbnail_exists": avatar_png.exists(),
+            "path": str(avatar_image),
+            "exists": avatar_image.exists(),
+            "size": fmt_size(get_size(avatar_image)),
+            "thumbnail_exists": avatar_image.exists(),
         },
         "voice": {
             "path": str(ref_audio),
@@ -356,43 +386,50 @@ async def api_assets_status():
 
 @app.post("/api/assets/avatar")
 async def api_upload_avatar(file: UploadFile = File(...)):
-    """上传人物视频"""
+    """Upload and normalize a still avatar image."""
     if not file.filename:
         return JSONResponse({"error": "未选择文件"}, status_code=400)
 
-    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "mp4"
-    if ext not in ("mp4", "mov", "webm", "avi"):
-        return JSONResponse({"error": f"不支持格式: .{ext}，请上传 .mp4"}, status_code=400)
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else "jpg"
+    if ext not in ("jpg", "jpeg", "png", "webp"):
+        return JSONResponse({"error": f"不支持格式: .{ext}，请上传 JPG 或 PNG 图片"}, status_code=400)
 
     avatar_dir = PROJECT_ROOT / "avatar"
     avatar_dir.mkdir(parents=True, exist_ok=True)
 
-    target = avatar_dir / f"avatar.{ext}"
+    target = avatar_dir / "avatar.jpg"
     content = await file.read()
 
     if len(content) < 1024:
-        return JSONResponse({"error": "文件太小，请上传有效视频"}, status_code=400)
-    if len(content) > 500 * 1024 * 1024:
-        return JSONResponse({"error": "文件过大，文件大小≤500MB"}, status_code=400)
+        return JSONResponse({"error": "文件太小，请上传有效人物图片"}, status_code=400)
+    if len(content) > 50 * 1024 * 1024:
+        return JSONResponse({"error": "文件过大，文件大小需小于 50MB"}, status_code=400)
 
-    with open(target, "wb") as f:
-        f.write(content)
+    try:
+        from io import BytesIO
+        from PIL import Image
 
-    # 如果是 mp4，也确保 avatar.mp4 存在
-    if ext != "mp4":
-        # 需要转换，这里先存原文件
-        pass
+        with Image.open(BytesIO(content)) as image:
+            image.load()
+            if image.width < 512 or image.height < 512:
+                return JSONResponse({"error": "图片分辨率过低，宽高需至少 512 像素"}, status_code=400)
+            image.convert("RGB").save(target, "JPEG", quality=95, optimize=True)
+    except Exception as exc:
+        return JSONResponse({"error": f"无法读取人物图片: {exc}"}, status_code=400)
 
     return JSONResponse({
         "ok": True,
         "filename": file.filename,
         "saved_as": str(target.name),
-        "size": round(len(content) / (1024 * 1024), 1),
+        "size": round(target.stat().st_size / (1024 * 1024), 1),
     })
 
 
 @app.post("/api/assets/voice")
-async def api_upload_voice(file: UploadFile = File(...)):
+async def api_upload_voice(
+    file: UploadFile = File(...),
+    reference_text: str = Form("大家好，我是AI足球教练。今天我们来聊一个很多球友都关心的问题。"),
+):
     """上传参考音频"""
     try:
         if not file.filename:
@@ -413,15 +450,42 @@ async def api_upload_voice(file: UploadFile = File(...)):
         if len(content) > 50 * 1024 * 1024:
             return JSONResponse({"error": "文件过大，文件大小≤50MB"}, status_code=400)
 
-        target = voice_dir / f"default.{ext}"
-        with open(target, "wb") as f:
-            f.write(content)
+        reference_text = reference_text.strip()
+        if not reference_text:
+            return JSONResponse({"error": "请填写参考音频对应的原文"}, status_code=400)
+
+        target = voice_dir / "default.wav"
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-v", "error", "-i", "pipe:0",
+                "-t", "10", "-ac", "1", "-ar", "32000",
+                "-c:a", "pcm_s16le", str(target),
+            ],
+            input=content,
+            capture_output=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            detail = result.stderr.decode("utf-8", errors="replace").strip()
+            return JSONResponse({"error": f"参考音频转换失败: {detail}"}, status_code=400)
+
+        from app.backend.providers.media_utils import validate_audio
+
+        validate_audio(target)
+        (voice_dir / "default.json").write_text(
+            json.dumps(
+                {"reference_text": reference_text, "language": "zh"},
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
         return JSONResponse({
             "ok": True,
             "filename": file.filename,
             "saved_as": str(target.name),
-            "size": round(len(content) / (1024 * 1024), 1),
+            "size": round(target.stat().st_size / (1024 * 1024), 1),
         })
     except Exception as e:
         return JSONResponse({"error": f"上传失败: {str(e)}"}, status_code=500)

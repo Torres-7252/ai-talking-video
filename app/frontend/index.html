@@ -240,7 +240,7 @@
       </div>
 
       <div id="missingAssetsWarn" class="tips-box" style="display:none;">
-        <strong>&#9888; 素材缺失</strong> — 请先在 <a href="#" onclick="switchTab('assets')">素材管理</a> 上传人物视频和参考音频
+        <strong>&#9888; 素材缺失</strong> — 请先在 <a href="#" onclick="switchTab('assets')">素材管理</a> 上传人物图片和参考音频
       </div>
 
       <div class="field"><label>视频标题 <span style="color:var(--danger)">*</span></label><input type="text" id="title" placeholder="e.g. 为什么你的第一脚触球总是停不好？" maxlength="80"></div>
@@ -262,22 +262,17 @@
   <!-- ============ TAB: ASSETS ============ -->
   <div id="panelAssets" style="display:none;">
     <div class="card">
-      <div class="card-header"><div class="icon" style="background:rgba(255,159,10,0.12)">&#128100;</div><h2>我的 AI 形象（人物视频）</h2></div>
+      <div class="card-header"><div class="icon" style="background:rgba(255,159,10,0.12)">&#128100;</div><h2>我的 AI 形象（人物图片）</h2></div>
       <div id="avatarZone" class="upload-zone missing" onclick="document.getElementById('avatarFile').click()">
-        <div class="icon">&#128249;</div>
-        <div id="avatarName" style="font-weight:500;">点击上传人物视频</div>
+        <div class="icon">&#128444;</div>
+        <div id="avatarName" style="font-weight:500;">点击上传人物图片</div>
         <div id="avatarStatus" class="status no">未上传</div>
-        <div class="hint">.mp4 / .mov — 正面、胸部以上、背景稳定、嘴部无遮挡 — ≤500MB</div>
+        <div class="hint">.jpg / .png — 正面清晰、嘴部无遮挡、保留完整背景 — ≤50MB</div>
       </div>
-      <input type="file" id="avatarFile" accept="video/mp4,video/mov,video/webm" style="display:none" onchange="uploadAvatar(this.files[0])">
+      <input type="file" id="avatarFile" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="uploadAvatar(this.files[0])">
 
       <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);line-height:1.7;">
-        <strong style="color:var(--text);">怎么录制人物视频？</strong><br>
-        1. 手机支架固定，拍胸部以上正面<br>
-        2. 纯色背景（白墙最佳），光线均匀<br>
-        3. 保持自然表情，轻微点头/眨眼<br>
-        4. 录制 30~60 秒，不说话，嘴巴自然闭合<br>
-        5. 导出 .mp4，通过这里上传
+        MuseTalk 1.5 使用整张人物图片生成口型，输出保持 1920×1080 横屏构图。
       </div>
     </div>
 
@@ -290,6 +285,7 @@
         <div class="hint">.wav / .mp3 — 5~10秒清晰中文语音用于克隆音色 — ≤50MB</div>
       </div>
       <input type="file" id="voiceFile" accept="audio/*" style="display:none" onchange="uploadVoice(this.files[0])">
+      <div class="field" style="margin-top:12px;"><label>参考音频原文</label><input type="text" id="referenceText" value="大家好，我是AI足球教练。今天我们来聊一个很多球友都关心的问题。"></div>
 
       <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);line-height:1.7;">
         <strong style="color:var(--text);">参考音频模板（照着念）：</strong>
@@ -320,7 +316,7 @@
         <h3>&#9312; 准备素材</h3>
         <ol>
           <li>切换到 <strong>素材管理</strong> 标签页</li>
-          <li>上传 <strong>人物视频</strong>（30~60秒正面半身，不说话，自然表情）</li>
+          <li>上传 <strong>人物图片</strong>（正面清晰、嘴部无遮挡、背景完整）</li>
           <li>上传 <strong>参考音频</strong>（5~10秒清晰中文语音，照着模板念或自由发挥）</li>
         </ol>
       </div>
@@ -394,7 +390,7 @@
 
     <!-- Video Requirements -->
     <div class="card">
-      <div class="card-header"><div class="icon" style="background:rgba(255,159,10,0.12)">&#9888;</div><h2>人物视频拍摄要求</h2></div>
+      <div class="card-header"><div class="icon" style="background:rgba(255,159,10,0.12)">&#9888;</div><h2>人物图片要求</h2></div>
 
       <div class="guide-section">
         <h3>&#9989; 必须做到</h3>
@@ -402,10 +398,8 @@
           <li>正面面对镜头，胸部以上入镜</li>
           <li>纯色背景（白色/灰色最佳），背景干净无杂物</li>
           <li>光线均匀打在脸上，不要有严重阴影</li>
-          <li>自然眨眼、轻微点头，保持放松</li>
-          <li>嘴巴自然闭合，不要张嘴或说话</li>
-          <li>录制 30~60 秒，中间可以有自然停顿</li>
-          <li>横屏或竖屏都可以，系统会自动处理</li>
+          <li>人物自然看向镜头，嘴巴自然闭合</li>
+          <li>推荐使用 16:9 横屏图片并保留完整背景</li>
         </ul>
       </div>
 
@@ -446,7 +440,7 @@
 
 <script>
 let ws = null, currentTask = null, activeProject = null;
-const STEP_ICONS = { '声音生成':'&#127925;', '数字人口型':'&#129302;', '字幕生成':'&#128196;', '视频包装':'&#127917;', '最终导出':'&#9889;' };
+const STEP_ICONS = { '声音生成':'&#127925;', 'MuseTalk 1.5口型':'&#129302;', '字幕生成':'&#128196;', '1080p横屏合成':'&#127917;', '最终导出':'&#9889;' };
 
 document.addEventListener('DOMContentLoaded', () => {
   connectWS(); loadProjects(); checkEnv(); loadAssets();
@@ -491,11 +485,11 @@ async function loadAssets() {
       if (!zone) return;
       if (d[k].exists) {
         zone.className='upload-zone has-file';
-        name.textContent = k==='avatar'?'avatar.mp4':'default.wav';
+        name.textContent = k==='avatar'?'avatar.jpg':'default.wav';
         status.textContent=`已上传 (${d[k].size})`; status.className='status ok';
       } else {
         zone.className='upload-zone missing';
-        name.textContent = k==='avatar'?'点击上传人物视频':'点击上传参考音频';
+        name.textContent = k==='avatar'?'点击上传人物图片':'点击上传参考音频';
         status.textContent='未上传'; status.className='status no';
       }
     });
@@ -515,14 +509,14 @@ async function uploadAvatar(file) {
   document.getElementById('avatarName').textContent = '上传中...';
   try {
     const r = await fetch('/api/assets/avatar', {method:'POST',body:fd}); const d = await r.json();
-    toast(d.ok ? '人物视频上传成功' : (d.error||'失败'), d.ok ? 'success' : 'error');
+    toast(d.ok ? '人物图片上传成功' : (d.error||'失败'), d.ok ? 'success' : 'error');
   } catch(e) { toast('上传失败: '+e, 'error'); }
   loadAssets();
 }
 
 async function uploadVoice(file) {
   if (!file) return;
-  const fd = new FormData(); fd.append('file', file);
+  const fd = new FormData(); fd.append('file', file); fd.append('reference_text', document.getElementById('referenceText').value.trim());
   document.getElementById('voiceName').textContent = '上传中...';
   try {
     const r = await fetch('/api/assets/voice', {method:'POST',body:fd}); const d = await r.json();
@@ -609,7 +603,7 @@ async function doGenerate() {
 }
 
 function initPipelineUI() {
-  ['声音生成','数字人口型','字幕生成','视频包装','最终导出'].forEach(n => {
+  ['声音生成','MuseTalk 1.5口型','字幕生成','1080p横屏合成','最终导出'].forEach(n => {
     const el = document.getElementById('step-'+n);
     if (el) { el.className='pipe-step pending'; el.querySelector('.step-status').textContent='等待中'; }
   });
