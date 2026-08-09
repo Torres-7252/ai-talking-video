@@ -1,17 +1,108 @@
-#!/usr/bin/env python3
-"""MuseTalk 嘴型同步模块 - lipsync_provider"""
+"""MuseTalk 1.5 adapter for local talking-head generation."""
 
-import sys
+from __future__ import annotations
+
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent.parent
+import yaml
 
-# MuseTalk 路径
+from app.backend.providers.media_utils import validate_audio, validate_video
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
 MUSETALK_PATH = PROJECT_ROOT / "app" / "backend" / "providers" / "lipsync" / "MuseTalk"
-if MUSETALK_PATH.exists():
-    sys.path.insert(0, str(MUSETALK_PATH))
+
+
+def required_musetalk_files() -> tuple[Path, ...]:
+    """Return the local files needed by the MuseTalk 1.5 inference path."""
+    relative_paths = (
+        "models/musetalkV15/musetalk.json",
+        "models/musetalkV15/unet.pth",
+        "models/sd-vae/config.json",
+        "models/sd-vae/diffusion_pytorch_model.bin",
+        "models/whisper/config.json",
+        "models/whisper/preprocessor_config.json",
+        "models/whisper/pytorch_model.bin",
+        "models/dwpose/dw-ll_ucoco_384.pth",
+        "models/face-parse-bisent/79999_iter.pth",
+        "models/face-parse-bisent/resnet18-5c106cde.pth",
+        "musetalk/utils/face_detection/detection/sfd/s3fd.pth",
+    )
+    return tuple(MUSETALK_PATH / path for path in relative_paths)
+
+
+def missing_musetalk_files() -> list[Path]:
+    """Return missing or empty MuseTalk model files."""
+    return [path for path in required_musetalk_files() if not path.is_file() or path.stat().st_size == 0]
+
+
+def _job_paths(output_path: Path) -> tuple[Path, Path, Path]:
+    work_dir = output_path.parent / ".musetalk" / output_path.stem
+    config_path = work_dir / "inference.yaml"
+    result_dir = work_dir / "results"
+    generated_path = result_dir / "v15" / output_path.name
+    return config_path, result_dir, generated_path
+
+
+def build_musetalk_job(
+    avatar_path: Path,
+    audio_path: Path,
+    output_path: Path,
+    *,
+    use_fp16: bool = True,
+) -> tuple[dict, list[str], Path]:
+    """Build a MuseTalk YAML payload and its official v1.5 CLI command."""
+    avatar = Path(avatar_path).resolve()
+    audio = Path(audio_path).resolve()
+    output = Path(output_path).resolve()
+    config_path, result_dir, _ = _job_paths(output)
+
+    job = {
+        "task_0": {
+            "video_path": str(avatar),
+            "audio_path": str(audio),
+            "bbox_shift": 0,
+        }
+    }
+    command = [
+        sys.executable,
+        "-m",
+        "scripts.inference",
+        "--inference_config",
+        str(config_path),
+        "--result_dir",
+        str(result_dir),
+        "--unet_config",
+        "models/musetalkV15/musetalk.json",
+        "--unet_model_path",
+        "models/musetalkV15/unet.pth",
+        "--whisper_dir",
+        "models/whisper",
+        "--vae_type",
+        "sd-vae",
+        "--version",
+        "v15",
+        "--fps",
+        "25",
+        "--batch_size",
+        "1",
+        "--output_vid_name",
+        output.name,
+    ]
+    if use_fp16:
+        command.append("--use_float16")
+    return job, command, MUSETALK_PATH
+
+
+def _validate_talking_video(path: Path) -> dict:
+    info = validate_video(path)
+    if not any(stream.get("codec_type") == "audio" for stream in info["streams"]):
+        raise RuntimeError(f"MuseTalk output has no audio stream: {path}")
+    return info
 
 
 def generate_lipsync(
@@ -21,69 +112,65 @@ def generate_lipsync(
     use_fp16: bool = True,
     avatar_cache_dir: Optional[str] = None,
 ) -> Path:
-    """
-    使用 MuseTalk 驱动人物视频进行嘴型同步。
+    """Generate a talking-head MP4 from a still image and WAV file."""
+    del avatar_cache_dir  # MuseTalk's image workflow manages coordinates itself.
 
-    Args:
-        avatar_path: 人物视频路径
-        audio_path: 音频文件路径 (wav)
-        output_path: 输出视频路径 (mp4)
-        use_fp16: 是否使用 FP16 加速
-        avatar_cache_dir: 人物预处理缓存目录
+    avatar = Path(avatar_path).resolve()
+    audio = Path(audio_path).resolve()
+    output = Path(output_path).resolve()
+    if not avatar.is_file():
+        raise FileNotFoundError(f"Avatar image does not exist: {avatar}")
+    validate_audio(audio)
 
-    Returns:
-        生成的嘴型同步视频路径
-    """
-    avatar = Path(avatar_path)
-    audio = Path(audio_path)
-    output = Path(output_path)
+    missing = missing_musetalk_files()
+    if missing:
+        details = "\n".join(f"  - {path}" for path in missing)
+        raise FileNotFoundError(
+            "MuseTalk 1.5 model files are incomplete. Run "
+            "scripts\\download_musetalk_models.ps1 first:\n" + details
+        )
+
     output.parent.mkdir(parents=True, exist_ok=True)
+    job, command, cwd = build_musetalk_job(avatar, audio, output, use_fp16=use_fp16)
+    config_path, _, generated_path = _job_paths(output)
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        yaml.safe_dump(job, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
 
-    if not avatar.exists():
-        raise FileNotFoundError(f"人物视频不存在: {avatar}")
-    if not audio.exists():
-        raise FileNotFoundError(f"音频文件不存在: {audio}")
+    print(f"  [lipsync] MuseTalk 1.5: {avatar.name} + {audio.name} -> {output.name}")
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("MuseTalk inference timed out after 30 minutes") from exc
 
-    if avatar_cache_dir is None:
-        avatar_cache_dir = str(PROJECT_ROOT / "avatar" / "cache")
-    cache = Path(avatar_cache_dir)
-    cache.mkdir(parents=True, exist_ok=True)
-
-    # 构建 MuseTalk 推理命令
-    muse_script = MUSETALK_PATH / "scripts" / "inference.py"
-
-    cmd = [
-        sys.executable,
-        str(muse_script),
-        "--avatar", str(avatar),
-        "--audio", str(audio),
-        "--output", str(output),
-        "--cache_dir", str(cache),
-    ]
-
-    if use_fp16:
-        cmd.append("--fp16")
-
-    print(f"  [lipsync] MuseTalk 推理: {avatar.name} + {audio.name} → {output.name}")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-
+    log_path = output.with_suffix(".musetalk.log")
+    log_path.write_text(
+        f"COMMAND: {' '.join(command)}\n\nSTDOUT:\n{result.stdout}\n\nSTDERR:\n{result.stderr}",
+        encoding="utf-8",
+    )
     if result.returncode != 0:
-        error_msg = result.stderr.strip() if result.stderr else result.stdout.strip()
-        if "CUDA out of memory" in error_msg:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
+        if "CUDA out of memory" in detail:
             raise RuntimeError(
-                f"MuseTalk failed: CUDA out of memory\n"
-                f"Possible solution:\n"
-                f"  1. Close other GPU programs\n"
-                f"  2. Enable FP16\n"
-                f"  3. Reduce batch size\n"
-                f"  4. Retry from lipsync stage"
+                "MuseTalk ran out of GPU memory. Close other GPU programs and retry "
+                f"with FP16 enabled. Full log: {log_path}"
             )
-        raise RuntimeError(f"MuseTalk failed: {error_msg}")
+        raise RuntimeError(f"MuseTalk failed: {detail}\nFull log: {log_path}")
 
-    if not output.exists():
-        raise RuntimeError(f"MuseTalk 输出文件未生成: {output}")
-
-    print(f"  [lipsync] 生成完成: {output}")
+    # Upstream catches some task exceptions, so a zero exit code is not sufficient.
+    _validate_talking_video(generated_path)
+    if generated_path != output:
+        shutil.copy2(generated_path, output)
+    _validate_talking_video(output)
+    print(f"  [lipsync] Generated: {output}")
     return output
 
 
@@ -92,71 +179,17 @@ def preprocess_avatar(
     cache_dir: Optional[str] = None,
     use_fp16: bool = True,
 ) -> Path:
-    """
-    预处理人物视频，生成缓存数据（仅第一次需要）。
-
-    Args:
-        avatar_path: 人物视频路径
-        cache_dir: 缓存目录
-        use_fp16: 是否使用 FP16
-
-    Returns:
-        缓存目录路径
-    """
-    avatar = Path(avatar_path)
-    if cache_dir is None:
-        cache_dir = PROJECT_ROOT / "avatar" / "cache"
-    cache = Path(cache_dir)
-
-    if not avatar.exists():
-        raise FileNotFoundError(f"人物视频不存在: {avatar}")
-
-    cache.mkdir(parents=True, exist_ok=True)
-
-    # 检查是否已有缓存
-    if (cache / "prepared.ready").exists():
-        print(f"  [lipsync] 人物缓存已存在，跳过预处理")
-        return cache
-
-    print(f"  [lipsync] 首次预处理人物: {avatar.name}")
-    muse_script = MUSETALK_PATH / "scripts" / "preprocess.py"
-
-    cmd = [
-        sys.executable,
-        str(muse_script),
-        "--avatar", str(avatar),
-        "--cache_dir", str(cache),
-    ]
-
-    if use_fp16:
-        cmd.append("--fp16")
-
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-
-    if result.returncode != 0:
-        raise RuntimeError(f"MuseTalk 预处理失败: {result.stderr}")
-
-    # 标记预处理完成
-    (cache / "prepared.ready").touch()
-    print(f"  [lipsync] 预处理完成")
-    return cache
+    """Validate an avatar for compatibility with the legacy pipeline call."""
+    del cache_dir, use_fp16
+    avatar = Path(avatar_path).resolve()
+    if not avatar.is_file():
+        raise FileNotFoundError(f"Avatar image does not exist: {avatar}")
+    return avatar
 
 
 if __name__ == "__main__":
-    # 独立测试
-    avatar = PROJECT_ROOT / "avatar" / "avatar.mp4"
-    audio = PROJECT_ROOT / "outputs" / "test_voice" / "audio.wav"
-    output = PROJECT_ROOT / "outputs" / "test_lipsync" / "talking.mp4"
-
-    if not avatar.exists():
-        print(f"请先准备人物视频: {avatar}")
-        sys.exit(1)
-
-    # 首次预处理
-    preprocess_avatar(str(avatar))
-
-    # 生成嘴型同步
-    if audio.exists():
-        generate_lipsync(str(avatar), str(audio), str(output))
-    else:
-        print(f"音频文件不存在: {audio}")
+    generate_lipsync(
+        str(PROJECT_ROOT / "avatar" / "avatar.jpg"),
+        str(PROJECT_ROOT / "outputs" / "acceptance" / "audio.wav"),
+        str(PROJECT_ROOT / "outputs" / "acceptance" / "talking.mp4"),
+    )
