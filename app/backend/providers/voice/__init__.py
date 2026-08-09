@@ -14,7 +14,7 @@ from typing import Optional
 import numpy as np
 import soundfile as sf
 
-from media_utils import validate_audio
+from app.backend.providers.media_utils import validate_audio
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]

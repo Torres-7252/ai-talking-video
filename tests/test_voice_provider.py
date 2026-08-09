@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -13,6 +14,19 @@ import voice
 
 
 class VoiceProviderTests(unittest.TestCase):
+    def test_provider_can_be_imported_through_project_package(self):
+        code = (
+            "import sys; "
+            f"sys.path.insert(0, {str(PROJECT_ROOT)!r}); "
+            "from app.backend.providers.voice import build_tts_config; "
+            "print(build_tts_config()['custom']['version'])"
+        )
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", code], capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "v3")
+
     def test_project_voice_profile_config_is_valid_json(self):
         config_path = PROJECT_ROOT / "config" / "profiles.json"
         config = json.loads(config_path.read_text(encoding="utf-8"))
