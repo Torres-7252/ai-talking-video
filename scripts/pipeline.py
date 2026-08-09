@@ -261,6 +261,7 @@ class Pipeline:
                 audio_path=str(self.audio_file),
                 output_json=str(self.subtitle_json),
                 output_srt=str(self.subtitle_srt),
+                transcript_text=self.script_text,
             )
             self._finish("subtitle", self.subtitle_json)
         except Exception as exc:

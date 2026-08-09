@@ -20,6 +20,9 @@ class RenderProviderTests(unittest.TestCase):
         self.assertIn("yuv420p", command)
         self.assertIn("format=yuv420p", joined)
         self.assertIn("range=limited", joined)
+        self.assertIn("-color_range tv", joined)
+        self.assertIn("-colorspace bt709", joined)
+        self.assertIn("colorprim=bt709", joined)
         self.assertNotIn("moviepy", joined.lower())
 
 

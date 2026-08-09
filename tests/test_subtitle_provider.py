@@ -8,6 +8,20 @@ from app.backend.providers import subtitle
 
 
 class SubtitleProviderTests(unittest.TestCase):
+    def test_known_transcript_replaces_asr_words_but_keeps_timing(self):
+        subtitles = [
+            {"text": "大家好这是本地echo播测试", "start": 0.1, "end": 3.8, "words": []}
+        ]
+
+        corrected = subtitle.apply_transcript_text(
+            subtitles, "大家好，这是本地AI口播测试。"
+        )
+
+        self.assertEqual(corrected[0]["start"], 0.1)
+        self.assertEqual(corrected[-1]["end"], 3.8)
+        self.assertIn("AI", "".join(item["text"] for item in corrected))
+        self.assertNotIn("echo", "".join(item["text"] for item in corrected))
+
     def test_asr_options_use_pinned_cached_models_without_optional_punctuation(self):
         options = subtitle.build_asr_options(device="cuda")
 

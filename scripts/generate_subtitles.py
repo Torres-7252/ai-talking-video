@@ -17,6 +17,7 @@ def main() -> None:
     parser.add_argument("--audio", required=True)
     parser.add_argument("--output", default=str(PROJECT_ROOT / "outputs" / "subtitle_test" / "subtitle.json"))
     parser.add_argument("--device", default="cuda", choices=("cuda", "cpu"))
+    parser.add_argument("--text", help="Known transcript text to use with ASR timing")
     args = parser.parse_args()
 
     output = Path(args.output)
@@ -27,6 +28,7 @@ def main() -> None:
         output_json=str(output),
         output_srt=str(output.with_suffix(".srt")),
         device=args.device,
+        transcript_text=args.text,
     )
 
 

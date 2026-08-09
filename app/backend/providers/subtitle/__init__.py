@@ -145,6 +145,14 @@ def normalize_asr_result(result: list, audio_duration: float) -> list[dict]:
     return subtitles
 
 
+def apply_transcript_text(subtitles: list[dict], transcript_text: str) -> list[dict]:
+    """Keep ASR timing while using the known script as caption text."""
+    text = _clean_asr_text(transcript_text)
+    if not text or not subtitles:
+        return subtitles
+    return _timed_text_segments(text, subtitles[0]["start"], subtitles[-1]["end"])
+
+
 def _seconds_to_srt_time(seconds: float) -> str:
     milliseconds = max(0, round(seconds * 1000))
     hours, milliseconds = divmod(milliseconds, 3_600_000)
@@ -220,6 +228,7 @@ def generate_subtitles(
     output_srt: Optional[str] = None,
     model_name: Optional[str] = None,
     device: str = "cuda",
+    transcript_text: Optional[str] = None,
 ) -> list[dict]:
     """Recognize speech locally and write JSON, SRT, and ASS subtitles."""
     from funasr import AutoModel
@@ -234,6 +243,8 @@ def generate_subtitles(
     model = AutoModel(**build_asr_options(model_name=model_name, device=device))
     result = model.generate(input=str(audio))
     subtitles = normalize_asr_result(result, audio_info["duration"])
+    if transcript_text:
+        subtitles = apply_transcript_text(subtitles, transcript_text)
 
     json_path.write_text(
         json.dumps(subtitles, ensure_ascii=False, indent=2), encoding="utf-8"
