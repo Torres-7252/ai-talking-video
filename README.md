@@ -1,116 +1,104 @@
-# AI数字人口播视频生成器
+# 本地 AI 口播视频生成器
 
-基于 RTX 4060 的本地中文 AI 口播视频生成流水线。
+在 Windows 和 NVIDIA GPU 上本地生成中文 AI 口播视频。流水线使用 GPT-SoVITS v3 克隆参考音色、MuseTalk 1.5 生成嘴型、FunASR 生成时间轴，并由 FFmpeg 输出带字幕的横屏 MP4；不调用付费云端语音或视频 API。
 
-## 技术栈
+## 输出规格
 
-| 模块 | 技术 | 功能 |
-|------|------|------|
-| AI声音 | GPT-SoVITS | 文案 → 中文语音 |
-| 数字人 | MuseTalk 1.5 | 音频驱动人物嘴型同步 |
-| 字幕 | FunASR | 中文语音识别 + 时间轴 |
-| 包装 | HyperFrames | 字幕/标题/Logo/B-roll/动画 |
-| 合成 | FFmpeg | 最终视频编码导出 |
+- 画面：1920x1080，25 fps，保留完整人物和背景
+- 视频：H.264，`yuv420p`，limited range
+- 音频：AAC
+- 文件：`outputs/<项目名>/final.mp4`
 
-## 流水线
+## 首次准备
 
-```
-文案 → GPT-SoVITS → audio.wav
-                  → MuseTalk → talking.mp4
-                 → FunASR → subtitle.json
-                → HyperFrames → packaged.mp4
-                             → FFmpeg → final.mp4
-```
+在 PowerShell 中进入项目目录：
 
-## 快速开始
-
-### 1. 环境检查
-
-```bash
-python scripts/check_environment.py
-```
-
-### 2. 安装依赖
-
-```bash
+```powershell
+cd D:\workspaces\ai-talking-video
 pip install -r requirements.txt
 ```
 
-### 3. 准备素材
+下载 MuseTalk 1.5 及其 VAE、Whisper、人脸检测依赖。下载量为数 GB，脚本支持断点续传：
 
-- 人物视频放到 `avatar/avatar.mp4`
-- 参考音频放到 `voice/references/default.wav`
-- Logo 放到 `assets/logo/logo.png`
-
-### 4. 安装核心模型
-
-**GPT-SoVITS:**
-```bash
-git clone https://github.com/RVC-Boss/GPT-SoVITS.git voice/models/GPT-SoVITS
-cd voice/models/GPT-SoVITS
-pip install -r requirements.txt
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\download_musetalk_models.ps1
 ```
 
-**MuseTalk:**
-```bash
-git clone https://github.com/TMElyralab/MuseTalk.git app/backend/providers/lipsync/MuseTalk
-cd app/backend/providers/lipsync/MuseTalk
-pip install -r requirements.txt
+准备人物图片和参考声音。以下命令不会修改桌面上的原文件：
+
+```powershell
+python scripts\prepare_assets.py `
+  --image "C:\Users\31078\Desktop\60b37dcd61ff34e82bace8beb9a5b679.jpg" `
+  --voice "C:\Users\31078\Desktop\标准录音 1.mp3"
 ```
 
-### 5. 运行流水线
+项目使用：
 
-```bash
-# 完整运行
-python scripts/pipeline.py --title "为什么你的停球总是停不好" --script "为什么你的第一脚触球一直停不好？今天告诉你三个关键点。" --template football_knowledge
+- `avatar/avatar.jpg`：人物和完整背景
+- `voice/references/default.wav`：3 至 10 秒清晰参考声音
+- `voice/references/default.json`：参考录音对应的原文
 
-# 断点续跑
-python scripts/pipeline.py --project 2026-08-07_xxx --resume
+检查 GPU、FFmpeg、Python 库、素材和每个模型文件：
 
-# 单独运行各模块
-python scripts/generate_voice.py --text "你的文案" --output ./outputs/test/audio.wav
-python scripts/generate_lipsync.py --audio ./outputs/test/audio.wav --output ./outputs/test/talking.mp4
-python scripts/generate_subtitles.py --audio ./outputs/test/audio.wav --output ./outputs/test/
-python scripts/render_video.py --talking ./outputs/test/talking.mp4 --subtitles ./outputs/test/subtitle.json
+```powershell
+python scripts\check_environment.py
 ```
 
-### 6. Web 控制台
+只有全部项目显示 `[OK]` 后才开始生成。首次模型下载时长取决于网络；首次推理还会建立模型和人物坐标缓存。
 
-```bash
-python scripts/web_server.py
-# 访问 http://127.0.0.1:8080
+## 启动网页
+
+运行：
+
+```powershell
+.\启动控制台.ps1
 ```
 
-## 目录结构
+控制台地址为 [http://127.0.0.1:8080](http://127.0.0.1:8080)。人物图片、参考音频、参考原文和口播文案均可在页面中管理。
 
-```
-ai-talking-video/
-├── app/
-│   ├── frontend/          # Web 前端
-│   └── backend/
-│       └── providers/     # 核心模块
-│           ├── voice/     # GPT-SoVITS 封装
-│           ├── lipsync/   # MuseTalk 封装
-│           ├── subtitle/  # FunASR 封装
-│           └── render/    # HyperFrames 封装
-├── avatar/                # 数字人素材
-├── voice/                 # 声音模型和配置
-├── assets/                # Logo/音乐/B-roll
-├── templates/             # 视频模板
-├── scripts/               # 运行脚本
-├── outputs/               # 输出目录
-└── config/                # 配置文件
+## 命令行生成
+
+短片验收命令：
+
+```powershell
+python scripts\pipeline.py `
+  --project acceptance `
+  --title "本地AI口播测试" `
+  --script "大家好，这是本地AI口播视频测试。今天我们一起练好第一脚触球。" `
+  --template talking_head
 ```
 
-## 输出格式
+失败后可从已有项目续跑，无需再次粘贴文案：
 
-- 分辨率: 1080×1920 (竖屏)
-- 帧率: 30fps
-- 编码: H.264 + AAC
-- 格式: MP4
+```powershell
+python scripts\pipeline.py --project acceptance --resume
+```
 
-## 开发阶段
+流水线只跳过通过媒体探测的完整产物；空文件或损坏文件会自动重新生成。每一步的状态、错误、日志路径和媒体摘要保存在 `outputs/<项目名>/metadata.json`。
 
-- [x] Phase 1: MVP 流水线 (文案 → final.mp4)
-- [ ] Phase 2: 自动素材系统
-- [ ] Phase 3: AI导演一键生成
+## 单模块命令
+
+```powershell
+python scripts\generate_voice.py --text "大家好，这是本地口播测试。" --output outputs\acceptance\audio.wav
+python scripts\generate_lipsync.py --avatar avatar\avatar.jpg --audio outputs\acceptance\audio.wav --output outputs\acceptance\talking.mp4
+python scripts\generate_subtitles.py --audio outputs\acceptance\audio.wav --output outputs\acceptance\subtitle.json
+python scripts\render_video.py --video outputs\acceptance\talking.mp4 --subtitles outputs\acceptance\subtitle.json --output outputs\acceptance\final.mp4
+```
+
+## 常见问题
+
+- `MuseTalk 1.5 model files are incomplete`：重新运行模型下载脚本，直到环境检查通过。
+- `CUDA out of memory`：关闭占用 GPU 的程序后重试；项目默认使用 FP16 和 batch size 1，并在进入 MuseTalk 前卸载 GPT-SoVITS。
+- `ffmpeg` 或 `ffprobe` 未找到：安装 FFmpeg，并将其 `bin` 目录加入 `PATH`。
+- FunASR 首次运行较慢：主识别模型和 VAD 会下载到用户缓存，后续运行直接复用。
+- 生成中断：保留项目目录，使用 `--resume` 继续。
+
+## 验证
+
+```powershell
+python -m unittest discover -s tests -v
+python -m compileall -q app scripts tests
+python scripts\check_environment.py
+```
+
+请仅使用你有权使用的人物图片和声音录音。

@@ -30,6 +30,27 @@ def sanitize_filename(name: str) -> str:
     return name.strip()[:50]
 
 
+def _resolve_project_dir(project_name: str, outputs_root: Path = OUTPUTS_ROOT) -> Path:
+    outputs = Path(outputs_root).resolve()
+    project = (outputs / project_name).resolve()
+    if project == outputs or not project.is_relative_to(outputs):
+        raise ValueError(f"Invalid project name: {project_name}")
+    return project
+
+
+def load_resume_metadata(
+    project_name: str,
+    outputs_root: Path = OUTPUTS_ROOT,
+) -> dict:
+    metadata_path = _resolve_project_dir(project_name, outputs_root) / "metadata.json"
+    if not metadata_path.is_file():
+        raise FileNotFoundError(f"Resume metadata does not exist: {metadata_path}")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if not str(metadata.get("script") or "").strip():
+        raise RuntimeError(f"Resume metadata has no talking script: {metadata_path}")
+    return metadata
+
+
 def artifact_is_valid(step: str, path: Path) -> bool:
     """Return whether a stage artifact is complete enough to resume from."""
     path = Path(path)
@@ -91,9 +112,7 @@ class Pipeline:
         self.template = template
         self.resume = resume
 
-        self.project_dir = (OUTPUTS_ROOT / project_name).resolve()
-        if self.project_dir == OUTPUTS_ROOT or not self.project_dir.is_relative_to(OUTPUTS_ROOT):
-            raise ValueError(f"Invalid project name: {project_name}")
+        self.project_dir = _resolve_project_dir(project_name)
         self.project_dir.mkdir(parents=True, exist_ok=True)
 
         self.script_file = self.project_dir / "script.txt"
@@ -321,13 +340,20 @@ def main() -> None:
     script_text = args.script or ""
     if args.script_file:
         script_text = Path(args.script_file).read_text(encoding="utf-8").strip()
+    resume_metadata = {}
+    if not script_text and args.resume and args.project:
+        try:
+            resume_metadata = load_resume_metadata(args.project)
+            script_text = str(resume_metadata["script"]).strip()
+        except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+            parser.error(str(exc))
     if not script_text:
         parser.error("Provide --script or --script-file")
 
     project_name = args.project or f"{get_timestamp()}_{sanitize_filename(args.title or 'untitled')}"
     Pipeline(
         project_name=project_name,
-        title=args.title or "AI talking video",
+        title=args.title or resume_metadata.get("title") or "AI talking video",
         script_text=script_text,
         voice_profile=args.voice,
         speed=args.speed,
