@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import sys
@@ -28,6 +29,27 @@ def sanitize_filename(name: str) -> str:
     for character in '<>:"/\\|?*':
         name = name.replace(character, "_")
     return name.strip()[:50]
+
+
+def build_motion_signature(
+    avatar_path: Path,
+    *,
+    style: str,
+    intensity: float,
+    fps: int,
+    audio_duration: float,
+) -> str:
+    avatar = Path(avatar_path).resolve()
+    digest = hashlib.sha256()
+    digest.update(avatar.read_bytes())
+    settings = {
+        "style": style,
+        "intensity": round(float(intensity), 4),
+        "fps": int(fps),
+        "audio_duration": round(float(audio_duration), 3),
+    }
+    digest.update(json.dumps(settings, sort_keys=True).encode("utf-8"))
+    return digest.hexdigest()
 
 
 def _resolve_project_dir(project_name: str, outputs_root: Path = OUTPUTS_ROOT) -> Path:
@@ -60,6 +82,9 @@ def artifact_is_valid(step: str, path: Path) -> bool:
         if step == "voice":
             validate_audio(path)
             return True
+        if step == "motion":
+            validate_video(path)
+            return True
         if step in {"lipsync", "talking"}:
             info = validate_video(path)
             return any(stream.get("codec_type") == "audio" for stream in info["streams"])
@@ -84,7 +109,15 @@ def _artifact_summary(step: str, path: Path) -> dict:
         "valid": artifact_is_valid(step, path),
         "size": path.stat().st_size if path.exists() else 0,
     }
-    if summary["valid"] and step in {"voice", "lipsync", "talking", "render", "export", "final"}:
+    if summary["valid"] and step in {
+        "voice",
+        "motion",
+        "lipsync",
+        "talking",
+        "render",
+        "export",
+        "final",
+    }:
         info = probe_media(path)
         summary["duration"] = round(info["duration"], 3)
         summary["streams"] = info["streams"]
@@ -101,6 +134,9 @@ class Pipeline:
         speed: float = 1.0,
         template: str = "talking_head",
         resume: bool = False,
+        motion_mode: str = "natural",
+        motion_style: str = "steady",
+        motion_intensity: float = 0.35,
     ):
         if not script_text.strip():
             raise ValueError("The talking script cannot be empty")
@@ -111,12 +147,22 @@ class Pipeline:
         self.speed = speed
         self.template = template
         self.resume = resume
+        if motion_mode not in {"natural", "off"}:
+            raise ValueError(f"Unsupported motion mode: {motion_mode}")
+        if motion_style != "steady":
+            raise ValueError(f"Unsupported motion style: {motion_style}")
+        if not 0.0 <= motion_intensity <= 1.0:
+            raise ValueError("Motion intensity must be between 0.0 and 1.0")
+        self.motion_mode = motion_mode
+        self.motion_style = motion_style
+        self.motion_intensity = float(motion_intensity)
 
         self.project_dir = _resolve_project_dir(project_name)
         self.project_dir.mkdir(parents=True, exist_ok=True)
 
         self.script_file = self.project_dir / "script.txt"
         self.audio_file = self.project_dir / "audio.wav"
+        self.motion_file = self.project_dir / "motion.mp4"
         self.talking_file = self.project_dir / "talking.mp4"
         self.subtitle_json = self.project_dir / "subtitle.json"
         self.subtitle_srt = self.project_dir / "subtitle.srt"
@@ -138,6 +184,9 @@ class Pipeline:
             "voice_profile": voice_profile,
             "avatar": "avatar/avatar.jpg",
             "template": template,
+            "motion_mode": motion_mode,
+            "motion_style": motion_style,
+            "motion_intensity": self.motion_intensity,
             "output": "1920x1080, 25 fps, H.264/AAC",
             "steps": existing.get("steps", {}),
         }
@@ -225,14 +274,78 @@ class Pipeline:
             self._fail("voice", exc)
             raise
 
+    @property
+    def lipsync_input(self) -> Path:
+        if self.motion_mode == "natural":
+            return self.motion_file
+        return PROJECT_ROOT / "avatar" / "avatar.jpg"
+
+    def step2_motion(self) -> None:
+        self._start("motion", "STEP 2: LivePortrait natural motion")
+        if self.motion_mode == "off":
+            self._step_log("motion", "skipped because motion mode is off")
+            self.update_metadata("motion", "skipped")
+            return
+
+        avatar = PROJECT_ROOT / "avatar" / "avatar.jpg"
+        if not avatar.is_file():
+            exc = FileNotFoundError(f"Avatar image does not exist: {avatar}")
+            self._fail("motion", exc)
+            raise exc
+        if not artifact_is_valid("voice", self.audio_file):
+            exc = RuntimeError(f"Voice artifact is invalid: {self.audio_file}")
+            self._fail("motion", exc)
+            raise exc
+
+        audio_duration = probe_media(self.audio_file)["duration"]
+        signature = build_motion_signature(
+            avatar,
+            style=self.motion_style,
+            intensity=self.motion_intensity,
+            fps=25,
+            audio_duration=audio_duration,
+        )
+        record = self.metadata["steps"].setdefault("motion", {})
+        if (
+            self.resume
+            and artifact_is_valid("motion", self.motion_file)
+            and record.get("signature") == signature
+        ):
+            record["signature"] = signature
+            self._finish("motion", self.motion_file, resumed=True)
+            return
+        if self.resume and self.motion_file.exists():
+            print("  [resume] Motion settings changed or artifact is invalid; regenerating")
+
+        try:
+            from app.backend.providers.motion import generate_motion
+
+            generate_motion(
+                avatar_path=str(avatar),
+                audio_path=str(self.audio_file),
+                output_path=str(self.motion_file),
+                style=self.motion_style,
+                intensity=self.motion_intensity,
+                fps=25,
+            )
+            record["signature"] = signature
+            self._finish("motion", self.motion_file)
+        except Exception as exc:
+            self._fail("motion", exc)
+            raise
+
     def step2_lipsync(self) -> None:
         self._start("lipsync", "STEP 2: MuseTalk 1.5 lip sync")
         if not self.should_run(self.talking_file, "lipsync"):
             self._finish("lipsync", self.talking_file, resumed=True)
             return
-        avatar = PROJECT_ROOT / "avatar" / "avatar.jpg"
+        avatar = self.lipsync_input
         if not avatar.is_file():
-            raise FileNotFoundError(f"Avatar image does not exist: {avatar}")
+            raise FileNotFoundError(f"Lip-sync input does not exist: {avatar}")
+        if self.motion_mode == "natural" and not artifact_is_valid(
+            "motion", avatar
+        ):
+            raise RuntimeError(f"Motion artifact is invalid: {avatar}")
         if not artifact_is_valid("voice", self.audio_file):
             raise RuntimeError(f"Voice artifact is invalid: {self.audio_file}")
         try:
@@ -312,6 +425,7 @@ class Pipeline:
         for step in (
             self.step0_setup,
             self.step1_voice,
+            self.step2_motion,
             self.step2_lipsync,
             self.step3_subtitle,
             self.step4_render,
@@ -336,6 +450,11 @@ def main() -> None:
         choices=("football_knowledge", "football_training", "product_promo", "talking_head"),
     )
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--motion-mode", default="natural", choices=("natural", "off")
+    )
+    parser.add_argument("--motion-style", default="steady", choices=("steady",))
+    parser.add_argument("--motion-intensity", type=float, default=0.35)
     args = parser.parse_args()
 
     script_text = args.script or ""
@@ -360,6 +479,9 @@ def main() -> None:
         speed=args.speed,
         template=args.template,
         resume=args.resume,
+        motion_mode=args.motion_mode,
+        motion_style=args.motion_style,
+        motion_intensity=args.motion_intensity,
     ).run()
 
 
