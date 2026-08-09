@@ -63,18 +63,26 @@ Invoke-HfDownload `
     -Files @("79999_iter.pth", "resnet18-5c106cde.pth")
 
 $S3fdPath = Join-Path $MuseTalkRoot "musetalk\utils\face_detection\detection\sfd\s3fd.pth"
-if (-not (Test-Path $S3fdPath -PathType Leaf)) {
+$S3fdExpectedSize = 89843225
+$S3fdNeedsDownload = -not (Test-Path $S3fdPath -PathType Leaf) -or `
+    (Get-Item $S3fdPath).Length -ne $S3fdExpectedSize
+if ($S3fdNeedsDownload) {
+    $S3fdTempPath = "$S3fdPath.part"
     Write-Host "Downloading S3FD face detector -> $S3fdPath"
     & $Curl `
         --fail `
         --location `
         --retry 5 `
         --retry-all-errors `
-        --output $S3fdPath `
+        --output $S3fdTempPath `
         "https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth"
     if ($LASTEXITCODE -ne 0) {
         throw "S3FD download failed (exit code $LASTEXITCODE)"
     }
+    if ((Get-Item $S3fdTempPath).Length -ne $S3fdExpectedSize) {
+        throw "S3FD download has an unexpected size: $S3fdTempPath"
+    }
+    Move-Item -LiteralPath $S3fdTempPath -Destination $S3fdPath -Force
 }
 
 Push-Location $ProjectRoot

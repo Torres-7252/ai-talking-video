@@ -44,6 +44,18 @@ class MuseTalkJobTests(unittest.TestCase):
         self.assertIn("models/dwpose/dw-ll_ucoco_384.pth", relative_paths)
         self.assertIn("models/face-parse-bisent/79999_iter.pth", relative_paths)
 
+    def test_large_downloads_have_exact_expected_sizes(self):
+        self.assertEqual(
+            lipsync.EXPECTED_MODEL_SIZES["models/musetalkV15/unet.pth"],
+            3_400_074_924,
+        )
+        self.assertEqual(
+            lipsync.EXPECTED_MODEL_SIZES[
+                "musetalk/utils/face_detection/detection/sfd/s3fd.pth"
+            ],
+            89_843_225,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

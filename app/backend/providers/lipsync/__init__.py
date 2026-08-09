@@ -15,6 +15,10 @@ from app.backend.providers.media_utils import validate_audio, validate_video
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 MUSETALK_PATH = PROJECT_ROOT / "app" / "backend" / "providers" / "lipsync" / "MuseTalk"
+EXPECTED_MODEL_SIZES = {
+    "models/musetalkV15/unet.pth": 3_400_074_924,
+    "musetalk/utils/face_detection/detection/sfd/s3fd.pth": 89_843_225,
+}
 
 
 def required_musetalk_files() -> tuple[Path, ...]:
@@ -36,8 +40,18 @@ def required_musetalk_files() -> tuple[Path, ...]:
 
 
 def missing_musetalk_files() -> list[Path]:
-    """Return missing or empty MuseTalk model files."""
-    return [path for path in required_musetalk_files() if not path.is_file() or path.stat().st_size == 0]
+    """Return missing, empty, or size-mismatched MuseTalk model files."""
+    missing = []
+    for path in required_musetalk_files():
+        relative_path = path.relative_to(MUSETALK_PATH).as_posix()
+        expected_size = EXPECTED_MODEL_SIZES.get(relative_path)
+        if (
+            not path.is_file()
+            or path.stat().st_size == 0
+            or (expected_size is not None and path.stat().st_size != expected_size)
+        ):
+            missing.append(path)
+    return missing
 
 
 def _job_paths(output_path: Path) -> tuple[Path, Path, Path]:
