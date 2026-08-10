@@ -3,9 +3,13 @@
 import tempfile
 import unittest
 import os
+import pickle
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import cv2
+import numpy as np
 from PIL import Image
 
 from app.backend.providers import lipsync
@@ -32,6 +36,7 @@ class MuseTalkJobTests(unittest.TestCase):
         self.assertEqual(command[command.index("--version") + 1], "v15")
         self.assertIn("--use_float16", command)
         self.assertIn("--inference_config", command)
+        self.assertIn("--saved_coord", command)
         self.assertNotIn("--avatar", command)
         self.assertNotIn("--audio", command)
         self.assertNotIn("--fp16", command)
@@ -127,6 +132,99 @@ class MuseTalkJobTests(unittest.TestCase):
                     lipsync.prepare_lipsync_input(
                         video, Path(temp_dir) / "talking.mp4"
                     )
+
+    def test_mouth_detail_mask_tracks_the_lower_face_and_fades_softly(self):
+        mask = lipsync.build_mouth_detail_mask(
+            frame_shape=(940, 1672),
+            face_box=(767, 259, 1021, 571),
+            strength=0.35,
+        )
+
+        self.assertEqual(mask.shape, (940, 1672, 1))
+        self.assertAlmostEqual(float(mask.max()), 0.35, places=2)
+        self.assertGreater(float(mask[484, 894, 0]), 0.34)
+        self.assertLess(float(mask[259, 894, 0]), 0.01)
+        self.assertEqual(float(mask[0, 0, 0]), 0.0)
+        self.assertTrue(np.all(mask >= 0.0))
+        self.assertTrue(np.all(mask <= 0.35))
+
+    def test_blend_mouth_detail_restores_source_texture_at_reduced_strength(self):
+        generated = np.zeros((100, 100, 3), dtype=np.uint8)
+        source = np.full((100, 100, 3), 200, dtype=np.uint8)
+
+        blended = lipsync.blend_mouth_detail(
+            generated,
+            source,
+            face_box=(25, 10, 75, 90),
+            strength=0.35,
+        )
+
+        self.assertTrue(np.allclose(blended[68, 50], 70, atol=1))
+        self.assertTrue(np.array_equal(blended[0, 0], generated[0, 0]))
+
+    def test_restore_mouth_detail_preserves_audio_and_only_softens_mouth(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            source = temp / "source.mp4"
+            generated = temp / "generated.mp4"
+            coords = temp / "source.pkl"
+            output = temp / "refined.mp4"
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+                    "-i", "color=c=white:s=100x100:r=25:d=0.4",
+                    "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(source),
+                ],
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "ffmpeg", "-y", "-v", "error", "-f", "lavfi",
+                    "-i", "color=c=black:s=100x100:r=25:d=0.4",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=0.4",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-shortest", str(generated),
+                ],
+                check=True,
+            )
+            with coords.open("wb") as coord_file:
+                pickle.dump([(25, 10, 75, 90)] * 10, coord_file)
+
+            lipsync.restore_mouth_detail(generated, source, coords, output)
+
+            capture = cv2.VideoCapture(str(output))
+            ok, frame = capture.read()
+            capture.release()
+            self.assertTrue(ok)
+            self.assertGreater(int(frame[68, 50, 0]), 60)
+            self.assertLess(int(frame[0, 0, 0]), 10)
+            info = lipsync.validate_video(output)
+            self.assertTrue(
+                any(stream.get("codec_type") == "audio" for stream in info["streams"])
+            )
+
+    def test_finalize_video_output_uses_saved_face_tracking_for_refinement(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            generated = temp / "results" / "v15" / "talking.mp4"
+            motion = temp / "motion.mp4"
+            output = temp / "talking.mp4"
+            result_dir = temp / "results"
+            with patch.object(
+                lipsync, "restore_mouth_detail", return_value=output
+            ) as restore:
+                result = lipsync.finalize_lipsync_output(
+                    generated, motion, result_dir, output
+                )
+
+        self.assertEqual(result, output)
+        restore.assert_called_once_with(
+            generated,
+            motion,
+            temp / "motion.pkl",
+            output,
+            strength=0.35,
+        )
 
 
 if __name__ == "__main__":

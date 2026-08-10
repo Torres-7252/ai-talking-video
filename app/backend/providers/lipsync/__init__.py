@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import pickle
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,8 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
+import cv2
+import numpy as np
 from PIL import Image
 
 from app.backend.providers.media_utils import validate_audio, validate_video
@@ -109,6 +112,7 @@ def build_musetalk_job(
         "1",
         "--output_vid_name",
         output.name,
+        "--saved_coord",
     ]
     if use_fp16:
         command.append("--use_float16")
@@ -157,6 +161,161 @@ def _video_frame_rate(value: object) -> float:
     return float(text)
 
 
+def build_mouth_detail_mask(
+    frame_shape: tuple[int, int],
+    face_box: tuple[int, int, int, int],
+    strength: float = 0.35,
+) -> np.ndarray:
+    """Build a soft mask that restores source detail around the tracked mouth."""
+    height, width = frame_shape
+    x1, y1, x2, y2 = (int(value) for value in face_box)
+    face_width = max(1, x2 - x1)
+    face_height = max(1, y2 - y1)
+    center_x = (x1 + x2) / 2.0
+    center_y = y1 + face_height * 0.72
+    sigma_x = face_width * 0.45
+    sigma_y = face_height * 0.19
+    y_grid, x_grid = np.ogrid[:height, :width]
+    distance = (
+        ((x_grid - center_x) / sigma_x) ** 2
+        + ((y_grid - center_y) / sigma_y) ** 2
+    )
+    mask = (float(strength) * np.exp(-0.5 * distance)).astype(np.float32)
+    mask[mask < 0.001] = 0.0
+    return mask[:, :, np.newaxis]
+
+
+def blend_mouth_detail(
+    generated_frame: np.ndarray,
+    source_frame: np.ndarray,
+    face_box: tuple[int, int, int, int],
+    strength: float = 0.35,
+) -> np.ndarray:
+    """Restore a restrained amount of source lip texture in one output frame."""
+    if generated_frame.shape != source_frame.shape:
+        raise ValueError("Generated and source frames must have matching dimensions")
+    frame_height, frame_width = generated_frame.shape[:2]
+    x1, y1, x2, y2 = (int(value) for value in face_box)
+    face_width = max(1, x2 - x1)
+    face_height = max(1, y2 - y1)
+    center_x = (x1 + x2) / 2.0
+    center_y = y1 + face_height * 0.72
+    radius_x = face_width * 0.45 * 3.5
+    radius_y = face_height * 0.19 * 3.5
+    left = max(0, int(center_x - radius_x))
+    right = min(frame_width, int(center_x + radius_x) + 1)
+    top = max(0, int(center_y - radius_y))
+    bottom = min(frame_height, int(center_y + radius_y) + 1)
+    local_box = (x1 - left, y1 - top, x2 - left, y2 - top)
+    mask = build_mouth_detail_mask(
+        (bottom - top, right - left), local_box, strength
+    )
+    generated_region = generated_frame[top:bottom, left:right].astype(np.float32)
+    source_region = source_frame[top:bottom, left:right].astype(np.float32)
+    blended_region = generated_region * (1.0 - mask) + source_region * mask
+    output = generated_frame.copy()
+    output[top:bottom, left:right] = np.clip(
+        np.rint(blended_region), 0, 255
+    ).astype(np.uint8)
+    return output
+
+
+def restore_mouth_detail(
+    generated_path: Path,
+    source_path: Path,
+    coord_path: Path,
+    output_path: Path,
+    strength: float = 0.35,
+) -> Path:
+    """Blend tracked source lip texture into a generated video and retain audio."""
+    generated = Path(generated_path).resolve()
+    source = Path(source_path).resolve()
+    coordinates = Path(coord_path).resolve()
+    output = Path(output_path).resolve()
+    if not coordinates.is_file():
+        raise FileNotFoundError(f"MuseTalk face coordinates do not exist: {coordinates}")
+    with coordinates.open("rb") as coord_file:
+        coord_list = pickle.load(coord_file)
+    if not isinstance(coord_list, list) or not coord_list:
+        raise RuntimeError(f"MuseTalk face coordinates are invalid: {coordinates}")
+
+    generated_capture = cv2.VideoCapture(str(generated))
+    source_capture = cv2.VideoCapture(str(source))
+    if not generated_capture.isOpened() or not source_capture.isOpened():
+        generated_capture.release()
+        source_capture.release()
+        raise RuntimeError("Could not open generated and source videos for mouth refinement")
+
+    width = int(generated_capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(generated_capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = float(generated_capture.get(cv2.CAP_PROP_FPS) or 25.0)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    encoded_output = output
+    if output == generated:
+        encoded_output = output.with_name(f".{output.stem}.refined.mp4")
+    command = [
+        "ffmpeg", "-y", "-v", "error",
+        "-f", "rawvideo", "-pix_fmt", "bgr24",
+        "-s", f"{width}x{height}", "-r", f"{fps:g}", "-i", "pipe:0",
+        "-i", str(generated),
+        "-map", "0:v:0", "-map", "1:a:0",
+        "-c:v", "libx264", "-preset", "medium", "-crf", "18",
+        "-pix_fmt", "yuv420p", "-c:a", "copy", "-shortest",
+        "-movflags", "+faststart", str(encoded_output),
+    ]
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+    )
+    coord_cycle = coord_list + coord_list[::-1]
+    frame_index = 0
+    last_source_frame = None
+    try:
+        while True:
+            generated_ok, generated_frame = generated_capture.read()
+            if not generated_ok:
+                break
+            source_ok, source_frame = source_capture.read()
+            if source_ok:
+                last_source_frame = source_frame
+            elif last_source_frame is not None:
+                source_frame = last_source_frame
+            else:
+                raise RuntimeError("Source motion video contains no readable frames")
+            if generated_frame.shape != source_frame.shape:
+                raise RuntimeError("Generated and source video dimensions do not match")
+            face_box = coord_cycle[frame_index % len(coord_cycle)]
+            if len(face_box) == 4 and face_box[2] > face_box[0] and face_box[3] > face_box[1]:
+                generated_frame = blend_mouth_detail(
+                    generated_frame, source_frame, face_box, strength
+                )
+            if process.stdin is None:
+                raise RuntimeError("FFmpeg mouth refinement pipe is unavailable")
+            process.stdin.write(generated_frame.tobytes())
+            frame_index += 1
+        if process.stdin is not None:
+            process.stdin.close()
+            process.stdin = None
+        return_code = process.wait(timeout=300)
+        stderr = process.stderr.read().decode("utf-8", errors="replace") if process.stderr else ""
+        if return_code != 0:
+            raise RuntimeError(f"FFmpeg mouth refinement failed: {stderr.strip()}")
+    except Exception:
+        if process.poll() is None:
+            process.kill()
+        raise
+    finally:
+        generated_capture.release()
+        source_capture.release()
+        if process.stderr is not None:
+            process.stderr.close()
+    if encoded_output != output:
+        encoded_output.replace(output)
+    return output
+
+
 def prepare_lipsync_input(input_path: Path, output_path: Path) -> Path:
     """Validate a motion video or normalize a still portrait for MuseTalk."""
     source = Path(input_path).resolve()
@@ -181,12 +340,38 @@ def prepare_lipsync_input(input_path: Path, output_path: Path) -> Path:
     return source
 
 
+def finalize_lipsync_output(
+    generated_path: Path,
+    inference_avatar: Path,
+    result_dir: Path,
+    output_path: Path,
+    mouth_detail_strength: float = 0.35,
+) -> Path:
+    """Refine dynamic input or copy the official output for still portraits."""
+    generated = Path(generated_path).resolve()
+    avatar = Path(inference_avatar).resolve()
+    output = Path(output_path).resolve()
+    if avatar.suffix.lower() in {".mp4", ".mov", ".avi", ".mkv"}:
+        coord_path = Path(result_dir).resolve().parent / f"{avatar.stem}.pkl"
+        return restore_mouth_detail(
+            generated,
+            avatar,
+            coord_path,
+            output,
+            strength=mouth_detail_strength,
+        )
+    if generated != output:
+        shutil.copy2(generated, output)
+    return output
+
+
 def generate_lipsync(
     avatar_path: str,
     audio_path: str,
     output_path: str,
     use_fp16: bool = True,
     avatar_cache_dir: Optional[str] = None,
+    mouth_detail_strength: float = 0.35,
 ) -> Path:
     """Generate a talking-head MP4 from a still image and WAV file."""
     del avatar_cache_dir  # MuseTalk's image workflow manages coordinates itself.
@@ -211,7 +396,7 @@ def generate_lipsync(
     job, command, cwd = build_musetalk_job(
         inference_avatar, audio, output, use_fp16=use_fp16
     )
-    config_path, _, generated_path = _job_paths(output)
+    config_path, result_dir, generated_path = _job_paths(output)
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         yaml.safe_dump(job, allow_unicode=True, sort_keys=False),
@@ -247,8 +432,13 @@ def generate_lipsync(
 
     # Upstream catches some task exceptions, so a zero exit code is not sufficient.
     _validate_talking_video(generated_path)
-    if generated_path != output:
-        shutil.copy2(generated_path, output)
+    finalize_lipsync_output(
+        generated_path,
+        inference_avatar,
+        result_dir,
+        output,
+        mouth_detail_strength,
+    )
     _validate_talking_video(output)
     print(f"  [lipsync] Generated: {output}")
     return output

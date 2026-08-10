@@ -107,6 +107,8 @@ python scripts\check_environment.py
 
 项目支持 `LivePortrait -> MuseTalk 1.5` 双阶段模式。LivePortrait 负责克制的眨眼、眼神、表情和头部微动作，MuseTalk 继续根据克隆语音生成中文口型。默认动作模式为 `natural`，原有仅口型路径可通过 `--motion-mode off` 使用。
 
+自然动作模式会保存 MuseTalk 的逐帧人脸框，并在嘴部区域软融合 35% 的动作底片细节。这样可以保留语音口型，同时减少持续张嘴、嘴内暗块和唇纹模糊；遮罩会跟随人脸移动，不依赖固定画面坐标。
+
 LivePortrait 使用独立 Python 3.10 环境，不会改动主项目的 PyTorch 依赖：
 
 ```powershell
