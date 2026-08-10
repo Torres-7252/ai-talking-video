@@ -6,10 +6,47 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 from app.backend.providers.motion import mimicmotion
+from scripts import mimicmotion_runner
 
 
 class MimicMotionProviderTests(unittest.TestCase):
+    def test_pose_intensity_scales_coordinates_around_reference_pose(self):
+        reference = {
+            "bodies": {
+                "candidate": np.array([[0.4, 0.5], [0.6, 0.5]]),
+                "score": np.array([[0.8, 0.8]]),
+                "subset": np.array([[0, 1]]),
+            },
+            "faces": np.array([[0.5, 0.4]]),
+            "faces_score": np.array([0.9]),
+            "hands": np.array([[0.3, 0.7]]),
+            "hands_score": np.array([0.8]),
+        }
+        moving = {
+            "bodies": {
+                "candidate": np.array([[0.2, 0.3], [0.8, 0.7]]),
+                "score": np.array([[0.4, 1.0]]),
+                "subset": np.array([[0, 1]]),
+            },
+            "faces": np.array([[0.7, 0.2]]),
+            "faces_score": np.array([0.5]),
+            "hands": np.array([[0.7, 0.3]]),
+            "hands_score": np.array([0.4]),
+        }
+
+        scaled = mimicmotion_runner._scale_pose_motion(reference, moving, 0.25)
+
+        np.testing.assert_allclose(
+            scaled["bodies"]["candidate"], [[0.35, 0.45], [0.65, 0.55]]
+        )
+        np.testing.assert_allclose(scaled["faces"], [[0.55, 0.35]])
+        np.testing.assert_allclose(scaled["hands"], [[0.4, 0.6]])
+        np.testing.assert_allclose(scaled["bodies"]["score"], [[0.7, 0.85]])
+        np.testing.assert_array_equal(scaled["bodies"]["subset"], [[0, 1]])
+
     def test_command_uses_isolated_runner_and_low_vram_defaults(self):
         command, cwd = mimicmotion.build_mimicmotion_command(
             Path("avatar.png"),

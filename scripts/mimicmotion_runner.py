@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import math
+import subprocess
 import sys
 from pathlib import Path
 
@@ -53,6 +55,93 @@ def _validate_driver_pose(driver: Path, minimum_ratio: float = 0.8) -> float:
     return ratio
 
 
+def _scale_pose_motion(reference_pose, moving_pose, intensity: float):
+    """Scale detected landmark displacement around the avatar's reference pose."""
+    import numpy as np
+
+    scaled = copy.deepcopy(moving_pose)
+
+    def blend(reference, moving):
+        reference = np.asarray(reference)
+        moving = np.asarray(moving)
+        if reference.shape != moving.shape:
+            return moving.copy()
+        return reference + (moving - reference) * intensity
+
+    scaled["bodies"]["candidate"] = blend(
+        reference_pose["bodies"]["candidate"],
+        moving_pose["bodies"]["candidate"],
+    )
+    scaled["bodies"]["score"] = blend(
+        reference_pose["bodies"]["score"], moving_pose["bodies"]["score"]
+    )
+    for landmarks, scores in (("faces", "faces_score"), ("hands", "hands_score")):
+        scaled[landmarks] = blend(reference_pose[landmarks], moving_pose[landmarks])
+        scaled[scores] = blend(reference_pose[scores], moving_pose[scores])
+    return scaled
+
+
+def _get_video_pose(video_path: str, ref_image, sample_stride: int, intensity: float):
+    """Run the pinned DWPose mapping with controllable landmark displacement."""
+    import decord
+    import numpy as np
+
+    from mimicmotion.dwpose.dwpose_detector import dwpose_detector
+    from mimicmotion.dwpose.util import draw_pose
+
+    reference_pose = dwpose_detector(ref_image)
+    reference_ids = [0, 1, 2, 5, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+    reference_ids = [
+        index
+        for index in reference_ids
+        if len(reference_pose["bodies"]["subset"])
+        and reference_pose["bodies"]["subset"][0][index] >= 0
+    ]
+    if len(reference_ids) < 4:
+        raise RuntimeError("Avatar reference image has insufficient body landmarks")
+    reference_body = reference_pose["bodies"]["candidate"][reference_ids]
+
+    reader = decord.VideoReader(video_path, ctx=decord.cpu(0))
+    sample_stride *= max(1, int(reader.get_avg_fps() / 24))
+    frames = reader.get_batch(list(range(0, len(reader), sample_stride))).asnumpy()
+    detected_poses = [dwpose_detector(frame) for frame in frames]
+
+    valid_bodies = [
+        pose["bodies"]["candidate"]
+        for pose in detected_poses
+        if pose["bodies"]["candidate"].shape[0] == 18
+    ]
+    if len(valid_bodies) != len(detected_poses):
+        dwpose_detector.release_memory()
+        raise RuntimeError("DWPose lost the primary presenter in one or more frames")
+    detected_bodies = np.stack(valid_bodies)[:, reference_ids]
+
+    height, width, _ = ref_image.shape
+    ay, by = np.polyfit(
+        detected_bodies[:, :, 1].flatten(),
+        np.tile(reference_body[:, 1], len(detected_bodies)),
+        1,
+    )
+    source_height, source_width, _ = reader[0].shape
+    ax = ay / (source_height / source_width / height * width)
+    bx = np.mean(
+        np.tile(reference_body[:, 0], len(detected_bodies))
+        - detected_bodies[:, :, 0].flatten() * ax
+    )
+    scale = np.array([ax, ay])
+    offset = np.array([bx, by])
+
+    output = []
+    for pose in detected_poses:
+        pose["bodies"]["candidate"] = pose["bodies"]["candidate"] * scale + offset
+        pose["faces"] = pose["faces"] * scale + offset
+        pose["hands"] = pose["hands"] * scale + offset
+        pose = _scale_pose_motion(reference_pose, pose, intensity)
+        output.append(np.array(draw_pose(pose, height, width)))
+    dwpose_detector.release_memory()
+    return np.stack(output)
+
+
 def _loop_pose_frames(pose_pixels, target_frames: int):
     import torch
 
@@ -77,6 +166,45 @@ def _force_cpu_vae_decode(pipeline) -> None:
     pipeline.decode_latents = decode_on_cpu
 
 
+def _save_to_mp4(frames, output: Path, fps: int) -> None:
+    height, width = frames.shape[-2:]
+    command = [
+        "ffmpeg",
+        "-y",
+        "-v",
+        "error",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgb24",
+        "-s",
+        f"{width}x{height}",
+        "-r",
+        str(fps),
+        "-i",
+        "pipe:0",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "medium",
+        "-crf",
+        "18",
+        "-pix_fmt",
+        "yuv420p",
+        str(output.resolve()),
+    ]
+    process = subprocess.Popen(command, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+    assert process.stdin is not None
+    for frame in frames:
+        process.stdin.write(frame.permute(1, 2, 0).contiguous().numpy().tobytes())
+    process.stdin.close()
+    assert process.stderr is not None
+    error = process.stderr.read().decode("utf-8", errors="replace")
+    if process.wait() != 0:
+        raise RuntimeError(f"FFmpeg failed to save MimicMotion output: {error}")
+
+
 def main() -> None:
     args = parse_args()
     runtime = args.runtime.resolve()
@@ -86,9 +214,8 @@ def main() -> None:
     from omegaconf import OmegaConf
     from torchvision.transforms.functional import to_pil_image
 
-    from inference import preprocess
+    import inference
     from mimicmotion.utils.loader import create_pipeline
-    from mimicmotion.utils.utils import save_to_mp4
 
     if not torch.cuda.is_available():
         raise RuntimeError("MimicMotion requires a CUDA GPU")
@@ -98,12 +225,19 @@ def main() -> None:
     print(f"Driver pose coverage: {_validate_driver_pose(args.driver.resolve()):.1%}")
     torch.set_default_dtype(torch.float16)
     device = torch.device("cuda")
-    pose_pixels, image_pixels = preprocess(
-        str(args.driver.resolve()),
-        str(args.image.resolve()),
-        resolution=args.resolution,
-        sample_stride=1,
+    original_get_video_pose = inference.get_video_pose
+    inference.get_video_pose = lambda video_path, ref_image, sample_stride=1: (
+        _get_video_pose(video_path, ref_image, sample_stride, args.intensity)
     )
+    try:
+        pose_pixels, image_pixels = inference.preprocess(
+            str(args.driver.resolve()),
+            str(args.image.resolve()),
+            resolution=args.resolution,
+            sample_stride=1,
+        )
+    finally:
+        inference.get_video_pose = original_get_video_pose
     target_frames = math.ceil(args.duration * args.fps) + 1
     pose_pixels = _loop_pose_frames(pose_pixels, target_frames)
     config = OmegaConf.create(
@@ -140,7 +274,9 @@ def main() -> None:
         output_type="pt",
         device=device,
     ).frames.cpu()[0, 1:]
-    save_to_mp4((frames * 255.0).clamp(0, 255).to(torch.uint8), args.output, fps=args.fps)
+    _save_to_mp4(
+        (frames * 255.0).clamp(0, 255).to(torch.uint8), args.output, args.fps
+    )
 
 
 if __name__ == "__main__":

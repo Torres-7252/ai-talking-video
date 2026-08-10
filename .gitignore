@@ -14,6 +14,7 @@ app/backend/providers/motion/MimicMotion/
 app/backend/providers/avatar/Ditto/
 .venv-liveportrait/
 .venv-mimicmotion/
+.venv-hf-download/
 .venv-ditto/
 motion/drivers/
 motion/templates/*.pkl
