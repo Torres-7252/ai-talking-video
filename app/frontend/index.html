@@ -285,6 +285,7 @@
         <div class="field"><label>语速</label><select id="speed"><option value="0.8">0.8x</option><option value="1.0" selected>1.0x</option><option value="1.2">1.2x</option><option value="1.5">1.5x</option></select></div>
       </div>
       <div class="field"><label for="avatarEngine">数字人引擎</label><select id="avatarEngine" onchange="updateMotionControls()"><option value="ditto" selected>Ditto 真实模式（推荐）</option><option value="classic">LivePortrait + MuseTalk 经典模式</option></select></div>
+      <div class="field"><label for="captionStyle">字幕动效</label><select id="captionStyle"><option value="clean" selected>清晰逐词高亮</option><option value="pop">弹跳强调</option><option value="bar">信息条</option></select></div>
       <div class="motion-controls" id="motionControls">
         <div class="field" style="margin-bottom:0;">
           <label>自然动作</label>
@@ -651,6 +652,7 @@ async function doGenerate() {
   fd.append('motion_mode', document.getElementById('motionEnabled').checked ? 'natural' : 'off');
   fd.append('motion_style', 'steady');
   fd.append('motion_intensity', String(Number(document.getElementById('motionIntensity').value) / 100));
+  fd.append('caption_style', document.getElementById('captionStyle').value);
   fd.append('resume', 'true');
   try {
     const r = await fetch('/api/generate',{method:'POST',body:fd}); const d = await r.json();

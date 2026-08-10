@@ -34,6 +34,7 @@ class WebMotionTests(unittest.TestCase):
         self.assertIn("motion_mode", parameters)
         self.assertIn("motion_style", parameters)
         self.assertIn("motion_intensity", parameters)
+        self.assertIn("caption_style", parameters)
         with patch.object(web_server.threading, "Thread"):
             response = asyncio.run(
                 web_server.api_generate(
@@ -47,6 +48,7 @@ class WebMotionTests(unittest.TestCase):
                     motion_mode="natural",
                     motion_style="steady",
                     motion_intensity=0.35,
+                    caption_style="pop",
                 )
             )
 
@@ -57,6 +59,7 @@ class WebMotionTests(unittest.TestCase):
         self.assertEqual(task["avatar_engine"], "classic")
         self.assertEqual(task["motion_style"], "steady")
         self.assertEqual(task["motion_intensity"], 0.35)
+        self.assertEqual(task["caption_style"], "pop")
         self.assertIn("LivePortrait 自然动作", [step["name"] for step in task["steps"]])
 
     def test_generate_request_rejects_invalid_motion_options(self):
@@ -92,6 +95,18 @@ class WebMotionTests(unittest.TestCase):
 
         self.assertEqual(bad_mode.status_code, 400)
         self.assertEqual(bad_intensity.status_code, 400)
+
+    def test_generate_request_rejects_invalid_caption_style(self):
+        with patch.object(web_server.threading, "Thread"):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="caption test",
+                    script="test script",
+                    caption_style="flashy",
+                )
+            )
+
+        self.assertEqual(response.status_code, 400)
 
     def test_generate_request_defaults_to_ditto_and_rejects_unknown_engine(self):
         parameters = inspect.signature(web_server.api_generate).parameters

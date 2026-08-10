@@ -19,6 +19,7 @@ OUTPUTS_ROOT = (PROJECT_ROOT / "outputs").resolve()
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.backend.providers.media_utils import probe_media, validate_audio, validate_video
+from app.backend.providers.subtitle.ass_renderer import CAPTION_PRESETS
 
 
 def get_timestamp() -> str:
@@ -138,6 +139,7 @@ class Pipeline:
         motion_mode: str = "natural",
         motion_style: str = "steady",
         motion_intensity: float = 0.35,
+        caption_style: str = "clean",
     ):
         if not script_text.strip():
             raise ValueError("The talking script cannot be empty")
@@ -156,10 +158,13 @@ class Pipeline:
             raise ValueError(f"Unsupported motion style: {motion_style}")
         if not 0.0 <= motion_intensity <= 1.0:
             raise ValueError("Motion intensity must be between 0.0 and 1.0")
+        if caption_style not in CAPTION_PRESETS:
+            raise ValueError(f"Unsupported caption style: {caption_style}")
         self.avatar_engine = avatar_engine
         self.motion_mode = motion_mode
         self.motion_style = motion_style
         self.motion_intensity = float(motion_intensity)
+        self.caption_style = caption_style
 
         self.project_dir = _resolve_project_dir(project_name)
         self.project_dir.mkdir(parents=True, exist_ok=True)
@@ -192,6 +197,7 @@ class Pipeline:
             "motion_mode": motion_mode,
             "motion_style": motion_style,
             "motion_intensity": self.motion_intensity,
+            "caption_style": caption_style,
             "output": "1920x1080, 25 fps, H.264/AAC",
             "steps": existing.get("steps", {}),
         }
@@ -337,6 +343,7 @@ class Pipeline:
                 style=self.motion_style,
                 intensity=self.motion_intensity,
                 fps=25,
+                caption_style=self.caption_style,
             )
             record["signature"] = signature
             self._finish("motion", self.motion_file)
@@ -490,6 +497,9 @@ def main() -> None:
     )
     parser.add_argument("--motion-style", default="steady", choices=("steady",))
     parser.add_argument("--motion-intensity", type=float, default=0.35)
+    parser.add_argument(
+        "--caption-style", default="clean", choices=tuple(sorted(CAPTION_PRESETS))
+    )
     args = parser.parse_args()
 
     script_text = args.script or ""
@@ -518,6 +528,7 @@ def main() -> None:
         motion_mode=args.motion_mode,
         motion_style=args.motion_style,
         motion_intensity=args.motion_intensity,
+        caption_style=args.caption_style,
     ).run()
 
 

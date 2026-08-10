@@ -20,6 +20,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "app" / "backend" / "providers"))
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.backend.providers.subtitle.ass_renderer import CAPTION_PRESETS
+
 # Fix GPT-SoVITS import paths
 sys.path.insert(0, str(PROJECT_ROOT / "voice" / "models" / "GPT-SoVITS" / "GPT_SoVITS" / "eres2net"))
 sys.path.insert(0, str(PROJECT_ROOT / "voice" / "models" / "GPT-SoVITS" / "GPT_SoVITS"))
@@ -185,6 +187,7 @@ async def api_generate(
     motion_mode: str = Form("natural"),
     motion_style: str = Form("steady"),
     motion_intensity: float = Form(0.35),
+    caption_style: str = Form("clean"),
 ):
     if not title or not script:
         return JSONResponse({"error": "标题和文案不能为空"}, status_code=400)
@@ -201,6 +204,10 @@ async def api_generate(
             {"error": "Motion intensity must be between 0.0 and 1.0"},
             status_code=400,
         )
+    if caption_style not in CAPTION_PRESETS:
+        return JSONResponse(
+            {"error": f"Invalid caption style: {caption_style}"}, status_code=400
+        )
 
     task_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe = "".join(c for c in title[:30] if c not in '<>:"/\\|?*').strip()
@@ -214,6 +221,7 @@ async def api_generate(
         "motion_mode": motion_mode,
         "motion_style": motion_style,
         "motion_intensity": motion_intensity,
+        "caption_style": caption_style,
         "status": "running",
         "current_step": "初始化",
         "steps": [
@@ -277,6 +285,7 @@ async def api_generate(
                 motion_mode=motion_mode,
                 motion_style=motion_style,
                 motion_intensity=motion_intensity,
+                caption_style=caption_style,
             )
 
             pipeline.step0_setup()

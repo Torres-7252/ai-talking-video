@@ -58,6 +58,7 @@ class PipelineMotionTests(unittest.TestCase):
         self.assertIn("motion_mode", parameters)
         self.assertIn("motion_style", parameters)
         self.assertIn("motion_intensity", parameters)
+        self.assertIn("caption_style", parameters)
         with tempfile.TemporaryDirectory() as temporary:
             pipeline = self.make_pipeline(Path(temporary))
 
@@ -65,8 +66,17 @@ class PipelineMotionTests(unittest.TestCase):
         self.assertEqual(pipeline.motion_mode, "natural")
         self.assertEqual(pipeline.motion_style, "steady")
         self.assertEqual(pipeline.motion_intensity, 0.35)
+        self.assertEqual(pipeline.caption_style, "clean")
         self.assertEqual(pipeline.metadata["motion_mode"], "natural")
         self.assertEqual(pipeline.metadata["avatar_engine"], "ditto")
+        self.assertEqual(pipeline.metadata["caption_style"], "clean")
+
+    def test_pipeline_accepts_public_caption_presets_and_rejects_unknown_style(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            pipeline = self.make_pipeline(Path(temporary), caption_style="pop")
+            self.assertEqual(pipeline.metadata["caption_style"], "pop")
+            with self.assertRaisesRegex(ValueError, "caption style"):
+                self.make_pipeline(Path(temporary), caption_style="flashy")
 
     def test_ditto_engine_skips_legacy_motion_stage(self):
         with tempfile.TemporaryDirectory() as temporary:
