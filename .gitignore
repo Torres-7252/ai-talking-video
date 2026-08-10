@@ -10,8 +10,10 @@ __pycache__/
 voice/models/
 app/backend/providers/lipsync/MuseTalk/
 app/backend/providers/motion/LivePortrait/
+app/backend/providers/motion/MimicMotion/
 app/backend/providers/avatar/Ditto/
 .venv-liveportrait/
+.venv-mimicmotion/
 .venv-ditto/
 motion/drivers/
 motion/templates/*.pkl
