@@ -99,6 +99,18 @@ class PipelineMotionTests(unittest.TestCase):
             pipeline_module.PROJECT_ROOT / "avatar" / "avatar.jpg",
         )
 
+    def test_gesture_mode_uses_motion_video_for_musetalk(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            pipeline = self.make_pipeline(
+                Path(temporary),
+                avatar_engine="classic",
+                motion_mode="gesture",
+                driver_profile="subtle_presenter",
+            )
+
+        self.assertEqual(pipeline.lipsync_input, pipeline.motion_file)
+        self.assertEqual(pipeline.metadata["driver_profile"], "subtle_presenter")
+
     def test_motion_signature_changes_with_avatar_or_settings(self):
         self.assertTrue(hasattr(pipeline_module, "build_motion_signature"))
         with tempfile.TemporaryDirectory() as temporary:
@@ -118,6 +130,47 @@ class PipelineMotionTests(unittest.TestCase):
         self.assertNotEqual(baseline, changed_intensity)
         self.assertNotEqual(baseline, changed_avatar)
         self.assertEqual(len(baseline), 64)
+
+    def test_gesture_signature_changes_with_driver_bytes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            avatar = root / "avatar.png"
+            driver = root / "driver.mp4"
+            avatar.write_bytes(b"avatar")
+            driver.write_bytes(b"first driver")
+            first = pipeline_module.build_motion_signature(
+                avatar,
+                style="steady",
+                intensity=0.25,
+                fps=15,
+                audio_duration=10.0,
+                driver_path=driver,
+            )
+            driver.write_bytes(b"changed driver")
+            second = pipeline_module.build_motion_signature(
+                avatar,
+                style="steady",
+                intensity=0.25,
+                fps=15,
+                audio_duration=10.0,
+                driver_path=driver,
+            )
+
+        self.assertNotEqual(first, second)
+
+    def test_render_stage_forwards_caption_style(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            pipeline = self.make_pipeline(
+                Path(temporary), caption_style="bar"
+            )
+            with patch.object(pipeline, "should_run", return_value=True), patch.object(
+                pipeline, "_finish"
+            ), patch(
+                "app.backend.providers.render.render_video"
+            ) as render_video:
+                pipeline.step4_render()
+
+        self.assertEqual(render_video.call_args.kwargs["caption_style"], "bar")
 
     def test_off_mode_records_skipped_motion_without_creating_artifact(self):
         self.assertTrue(hasattr(Pipeline, "step2_motion"))

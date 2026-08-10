@@ -311,3 +311,9 @@ def generate_motion(
     os.replace(temporary_output, output)
     print(f"  [motion] Generated: {output}")
     return output
+
+
+from app.backend.providers.motion.mimicmotion import (  # noqa: E402
+    generate_gesture_motion,
+    missing_mimicmotion_files,
+)

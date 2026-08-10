@@ -22,6 +22,11 @@ from app.backend.providers.media_utils import probe_media, validate_audio, valid
 from app.backend.providers.subtitle.ass_renderer import CAPTION_PRESETS
 
 
+DRIVER_PROFILES = {
+    "subtle_presenter": PROJECT_ROOT / "motion" / "drivers" / "subtle_presenter.mp4"
+}
+
+
 def get_timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d_%H%M%S")
 
@@ -39,10 +44,13 @@ def build_motion_signature(
     intensity: float,
     fps: int,
     audio_duration: float,
+    driver_path: Optional[Path] = None,
 ) -> str:
     avatar = Path(avatar_path).resolve()
     digest = hashlib.sha256()
     digest.update(avatar.read_bytes())
+    if driver_path is not None:
+        digest.update(Path(driver_path).resolve().read_bytes())
     settings = {
         "style": style,
         "intensity": round(float(intensity), 4),
@@ -140,6 +148,7 @@ class Pipeline:
         motion_style: str = "steady",
         motion_intensity: float = 0.35,
         caption_style: str = "clean",
+        driver_profile: str = "subtle_presenter",
     ):
         if not script_text.strip():
             raise ValueError("The talking script cannot be empty")
@@ -152,7 +161,7 @@ class Pipeline:
         self.resume = resume
         if avatar_engine not in {"ditto", "classic"}:
             raise ValueError(f"Unsupported avatar engine: {avatar_engine}")
-        if motion_mode not in {"natural", "off"}:
+        if motion_mode not in {"natural", "gesture", "off"}:
             raise ValueError(f"Unsupported motion mode: {motion_mode}")
         if motion_style != "steady":
             raise ValueError(f"Unsupported motion style: {motion_style}")
@@ -160,11 +169,14 @@ class Pipeline:
             raise ValueError("Motion intensity must be between 0.0 and 1.0")
         if caption_style not in CAPTION_PRESETS:
             raise ValueError(f"Unsupported caption style: {caption_style}")
+        if driver_profile not in DRIVER_PROFILES:
+            raise ValueError(f"Unsupported driver profile: {driver_profile}")
         self.avatar_engine = avatar_engine
         self.motion_mode = motion_mode
         self.motion_style = motion_style
         self.motion_intensity = float(motion_intensity)
         self.caption_style = caption_style
+        self.driver_profile = driver_profile
 
         self.project_dir = _resolve_project_dir(project_name)
         self.project_dir.mkdir(parents=True, exist_ok=True)
@@ -198,6 +210,7 @@ class Pipeline:
             "motion_style": motion_style,
             "motion_intensity": self.motion_intensity,
             "caption_style": caption_style,
+            "driver_profile": driver_profile,
             "output": "1920x1080, 25 fps, H.264/AAC",
             "steps": existing.get("steps", {}),
         }
@@ -287,12 +300,17 @@ class Pipeline:
 
     @property
     def lipsync_input(self) -> Path:
-        if self.motion_mode == "natural":
+        if self.motion_mode in {"natural", "gesture"}:
             return self.motion_file
         return PROJECT_ROOT / "avatar" / "avatar.jpg"
 
     def step2_motion(self) -> None:
-        self._start("motion", "STEP 2: LivePortrait natural motion")
+        motion_label = (
+            "MimicMotion gesture motion"
+            if self.motion_mode == "gesture"
+            else "LivePortrait natural motion"
+        )
+        self._start("motion", f"STEP 2: {motion_label}")
         if self.avatar_engine == "ditto" or self.motion_mode == "off":
             reason = (
                 "Ditto handles full facial motion"
@@ -314,12 +332,18 @@ class Pipeline:
             raise exc
 
         audio_duration = probe_media(self.audio_file)["duration"]
+        driver = DRIVER_PROFILES[self.driver_profile] if self.motion_mode == "gesture" else None
+        if driver is not None and not driver.is_file():
+            exc = FileNotFoundError(f"Gesture driver does not exist: {driver}")
+            self._fail("motion", exc)
+            raise exc
         signature = build_motion_signature(
             avatar,
             style=self.motion_style,
             intensity=self.motion_intensity,
-            fps=25,
+            fps=15 if self.motion_mode == "gesture" else 25,
             audio_duration=audio_duration,
+            driver_path=driver,
         )
         record = self.metadata["steps"].setdefault("motion", {})
         if (
@@ -334,17 +358,27 @@ class Pipeline:
             print("  [resume] Motion settings changed or artifact is invalid; regenerating")
 
         try:
-            from app.backend.providers.motion import generate_motion
+            if self.motion_mode == "gesture":
+                from app.backend.providers.motion import generate_gesture_motion
 
-            generate_motion(
-                avatar_path=str(avatar),
-                audio_path=str(self.audio_file),
-                output_path=str(self.motion_file),
-                style=self.motion_style,
-                intensity=self.motion_intensity,
-                fps=25,
-                caption_style=self.caption_style,
-            )
+                generate_gesture_motion(
+                    image_path=str(avatar),
+                    driver_video_path=str(driver),
+                    output_path=str(self.motion_file),
+                    duration=audio_duration,
+                    intensity=self.motion_intensity,
+                )
+            else:
+                from app.backend.providers.motion import generate_motion
+
+                generate_motion(
+                    avatar_path=str(avatar),
+                    audio_path=str(self.audio_file),
+                    output_path=str(self.motion_file),
+                    style=self.motion_style,
+                    intensity=self.motion_intensity,
+                    fps=25,
+                )
             record["signature"] = signature
             self._finish("motion", self.motion_file)
         except Exception as exc:
@@ -370,7 +404,7 @@ class Pipeline:
             raise FileNotFoundError(f"Lip-sync input does not exist: {avatar}")
         if (
             self.avatar_engine == "classic"
-            and self.motion_mode == "natural"
+            and self.motion_mode in {"natural", "gesture"}
             and not artifact_is_valid("motion", avatar)
         ):
             raise RuntimeError(f"Motion artifact is invalid: {avatar}")
@@ -435,6 +469,7 @@ class Pipeline:
                 width=1920,
                 height=1080,
                 fps=25,
+                caption_style=self.caption_style,
             )
             self._finish("render", self.packaged_file)
         except Exception as exc:
@@ -493,10 +528,15 @@ def main() -> None:
         "--avatar-engine", default="ditto", choices=("ditto", "classic")
     )
     parser.add_argument(
-        "--motion-mode", default="natural", choices=("natural", "off")
+        "--motion-mode", default="natural", choices=("natural", "gesture", "off")
     )
     parser.add_argument("--motion-style", default="steady", choices=("steady",))
     parser.add_argument("--motion-intensity", type=float, default=0.35)
+    parser.add_argument(
+        "--driver-profile",
+        default="subtle_presenter",
+        choices=tuple(sorted(DRIVER_PROFILES)),
+    )
     parser.add_argument(
         "--caption-style", default="clean", choices=tuple(sorted(CAPTION_PRESETS))
     )
@@ -529,6 +569,7 @@ def main() -> None:
         motion_style=args.motion_style,
         motion_intensity=args.motion_intensity,
         caption_style=args.caption_style,
+        driver_profile=args.driver_profile,
     ).run()
 
 

@@ -25,8 +25,21 @@ def _command_version(command: list[str]) -> str:
     return (result.stdout or result.stderr).splitlines()[0]
 
 
+def mimicmotion_optional_status() -> tuple[str, bool, str]:
+    from app.backend.providers.motion import missing_mimicmotion_files
+
+    missing = missing_mimicmotion_files()
+    detail = f"optional; missing {len(missing)} file(s)"
+    if missing:
+        detail += "; run scripts\\install_mimicmotion_runtime.ps1"
+    else:
+        detail = "optional; ready"
+    return "MimicMotion gesture motion", not missing, detail
+
+
 def main() -> int:
     checks: list[tuple[str, bool, str]] = []
+    optional_checks: list[tuple[str, bool, str]] = []
 
     checks.append(("Python >= 3.10", sys.version_info >= (3, 10), sys.version.split()[0]))
     for executable, args in (
@@ -96,6 +109,7 @@ def main() -> int:
     checks.append(
         ("LivePortrait natural motion", not missing_liveportrait, liveportrait_detail)
     )
+    optional_checks.append(mimicmotion_optional_status())
 
     missing_ditto = missing_ditto_files()
     ditto_detail = f"missing {len(missing_ditto)} file(s)"
@@ -116,6 +130,8 @@ def main() -> int:
     print("=" * 60)
     for name, passed, detail in checks:
         print(f"[{'OK' if passed else 'FAIL'}] {name}: {detail}")
+    for name, passed, detail in optional_checks:
+        print(f"[{'OK' if passed else 'OPTIONAL'}] {name}: {detail}")
     failed = [name for name, passed, _ in checks if not passed]
     print("=" * 60)
     if failed:

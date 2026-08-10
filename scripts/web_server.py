@@ -188,6 +188,7 @@ async def api_generate(
     motion_style: str = Form("steady"),
     motion_intensity: float = Form(0.35),
     caption_style: str = Form("clean"),
+    driver_profile: str = Form("subtle_presenter"),
 ):
     if not title or not script:
         return JSONResponse({"error": "标题和文案不能为空"}, status_code=400)
@@ -195,7 +196,7 @@ async def api_generate(
         return JSONResponse(
             {"error": f"Invalid avatar engine: {avatar_engine}"}, status_code=400
         )
-    if motion_mode not in {"natural", "off"}:
+    if motion_mode not in {"natural", "gesture", "off"}:
         return JSONResponse({"error": f"Invalid motion mode: {motion_mode}"}, status_code=400)
     if motion_style != "steady":
         return JSONResponse({"error": f"Invalid motion style: {motion_style}"}, status_code=400)
@@ -207,6 +208,10 @@ async def api_generate(
     if caption_style not in CAPTION_PRESETS:
         return JSONResponse(
             {"error": f"Invalid caption style: {caption_style}"}, status_code=400
+        )
+    if driver_profile not in {"subtle_presenter"}:
+        return JSONResponse(
+            {"error": f"Invalid driver profile: {driver_profile}"}, status_code=400
         )
 
     task_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -222,6 +227,7 @@ async def api_generate(
         "motion_style": motion_style,
         "motion_intensity": motion_intensity,
         "caption_style": caption_style,
+        "driver_profile": driver_profile,
         "status": "running",
         "current_step": "初始化",
         "steps": [
@@ -237,7 +243,11 @@ async def api_generate(
     }
     legacy_motion_step_name = tasks[task_id]["steps"][1]["name"]
     legacy_avatar_step_name = tasks[task_id]["steps"][2]["name"]
-    motion_step_name = "LivePortrait 自然动作"
+    motion_step_name = (
+        "MimicMotion 手势动作"
+        if motion_mode == "gesture"
+        else "LivePortrait 自然动作"
+    )
     avatar_step_name = (
         "Ditto 真实数字人"
         if avatar_engine == "ditto"
@@ -286,6 +296,7 @@ async def api_generate(
                 motion_style=motion_style,
                 motion_intensity=motion_intensity,
                 caption_style=caption_style,
+                driver_profile=driver_profile,
             )
 
             pipeline.step0_setup()
@@ -305,7 +316,7 @@ async def api_generate(
                 pipeline.step2_motion()
                 motion_status = (
                     "done"
-                    if avatar_engine == "classic" and motion_mode == "natural"
+                    if avatar_engine == "classic" and motion_mode in {"natural", "gesture"}
                     else "skipped"
                 )
                 update_step("LivePortrait 自然动作", motion_status)
@@ -313,6 +324,8 @@ async def api_generate(
                     add_log("面部动作将由 Ditto 与口型联合生成")
                 elif motion_mode == "natural":
                     add_log("LivePortrait 自然动作生成完成")
+                elif motion_mode == "gesture":
+                    add_log("MimicMotion 手势动作生成完成")
                 else:
                     add_log("自然动作已关闭，使用快速口型模式")
             except Exception as e:

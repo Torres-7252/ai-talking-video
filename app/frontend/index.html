@@ -288,14 +288,15 @@
       <div class="field"><label for="captionStyle">字幕动效</label><select id="captionStyle"><option value="clean" selected>清晰逐词高亮</option><option value="pop">弹跳强调</option><option value="bar">信息条</option></select></div>
       <div class="motion-controls" id="motionControls">
         <div class="field" style="margin-bottom:0;">
-          <label>自然动作</label>
-          <label class="motion-toggle"><input type="checkbox" id="motionEnabled" checked onchange="updateMotionControls()"><span>LivePortrait</span></label>
+          <label for="motionMode">身体动作</label>
+          <select id="motionMode" onchange="updateMotionControls()"><option value="natural" selected>自然微动</option><option value="gesture">手势动作</option><option value="off">关闭动作</option></select>
         </div>
         <div class="field" style="margin-bottom:0;">
           <label for="motionIntensity">动作强度</label>
           <div class="motion-range"><input type="range" id="motionIntensity" min="0" max="100" value="35" step="5" oninput="updateMotionControls()"><span class="motion-value" id="motionValue">35%</span></div>
         </div>
       </div>
+      <div class="field" id="driverProfileField" style="display:none;"><label for="driverProfile">动作素材</label><select id="driverProfile"><option value="subtle_presenter" selected>坐姿轻手势</option></select></div>
       <button class="btn btn-primary" onclick="doGenerate()" id="genBtn">&#9889; 开始生成视频</button>
     </div>
 
@@ -497,12 +498,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function updateMotionControls() {
   const classic = document.getElementById('avatarEngine').value === 'classic';
-  const toggle = document.getElementById('motionEnabled');
-  const enabled = classic && toggle.checked;
+  const mode = document.getElementById('motionMode');
+  const enabled = classic && mode.value !== 'off';
   const slider = document.getElementById('motionIntensity');
-  toggle.disabled = !classic;
+  mode.disabled = !classic;
   slider.disabled = !enabled;
   document.getElementById('motionControls').style.opacity = classic ? '1' : '0.45';
+  document.getElementById('driverProfileField').style.display = classic && mode.value === 'gesture' ? '' : 'none';
   document.getElementById('motionValue').textContent = `${slider.value}%`;
 }
 
@@ -649,10 +651,11 @@ async function doGenerate() {
   fd.append('template', document.getElementById('template').value);
   fd.append('speed', document.getElementById('speed').value);
   fd.append('avatar_engine', document.getElementById('avatarEngine').value);
-  fd.append('motion_mode', document.getElementById('motionEnabled').checked ? 'natural' : 'off');
+  fd.append('motion_mode', document.getElementById('motionMode').value);
   fd.append('motion_style', 'steady');
   fd.append('motion_intensity', String(Number(document.getElementById('motionIntensity').value) / 100));
   fd.append('caption_style', document.getElementById('captionStyle').value);
+  fd.append('driver_profile', document.getElementById('driverProfile').value);
   fd.append('resume', 'true');
   try {
     const r = await fetch('/api/generate',{method:'POST',body:fd}); const d = await r.json();
@@ -668,7 +671,8 @@ async function doGenerate() {
 
 function initPipelineUI(stepNames = null) {
   const avatarStep = document.getElementById('avatarEngine').value === 'ditto' ? 'Ditto 真实数字人' : 'MuseTalk 1.5口型';
-  const names = stepNames || ['声音生成','LivePortrait 自然动作',avatarStep,'字幕生成','1080p横屏合成','最终导出'];
+  const motionStep = document.getElementById('motionMode').value === 'gesture' ? 'MimicMotion 手势动作' : 'LivePortrait 自然动作';
+  const names = stepNames || ['声音生成',motionStep,avatarStep,'字幕生成','1080p横屏合成','最终导出'];
   document.getElementById('pipelineSteps').innerHTML = names.map((name, index) => `<div class="pipe-step pending" id="step-${name}"><div class="pipe-indicator">${index + 1}</div><div class="step-label"><div class="step-name">${STEP_ICONS[name] || ''} ${name}</div><div class="step-status">等待中</div></div></div>`).join('');
   document.getElementById('logConsole').innerHTML = '';
 }

@@ -6,6 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts import check_environment
+
 
 MODULE_NAME = "app.backend.providers.motion"
 
@@ -17,6 +19,23 @@ def load_motion_module(test_case: unittest.TestCase):
 
 
 class LivePortraitMotionTests(unittest.TestCase):
+    def test_motion_provider_exports_mimicmotion_entrypoint(self):
+        motion = load_motion_module(self)
+
+        self.assertTrue(callable(motion.generate_gesture_motion))
+
+    def test_missing_mimicmotion_is_reported_as_optional(self):
+        with patch(
+            "app.backend.providers.motion.missing_mimicmotion_files",
+            return_value=[Path("missing.pth")],
+        ):
+            name, ready, detail = check_environment.mimicmotion_optional_status()
+
+        self.assertEqual(name, "MimicMotion gesture motion")
+        self.assertFalse(ready)
+        self.assertIn("optional", detail.lower())
+        self.assertIn("install_mimicmotion_runtime.ps1", detail)
+
     def test_build_command_uses_official_cli_and_requested_intensity(self):
         motion = load_motion_module(self)
         with tempfile.TemporaryDirectory() as temporary:

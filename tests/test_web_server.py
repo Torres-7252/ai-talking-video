@@ -49,6 +49,7 @@ class WebMotionTests(unittest.TestCase):
                     motion_style="steady",
                     motion_intensity=0.35,
                     caption_style="pop",
+                    driver_profile="subtle_presenter",
                 )
             )
 
@@ -103,6 +104,40 @@ class WebMotionTests(unittest.TestCase):
                     title="caption test",
                     script="test script",
                     caption_style="flashy",
+                )
+            )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_generate_request_accepts_gesture_driver_profile(self):
+        with patch.object(web_server.threading, "Thread"):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="gesture test",
+                    script="test script",
+                    avatar_engine="classic",
+                    motion_mode="gesture",
+                    motion_style="steady",
+                    motion_intensity=0.25,
+                    caption_style="clean",
+                    driver_profile="subtle_presenter",
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.body)
+        task = web_server.tasks[payload["task_id"]]
+        self.assertEqual(task["driver_profile"], "subtle_presenter")
+        self.assertIn("MimicMotion 手势动作", [step["name"] for step in task["steps"]])
+
+    def test_generate_request_rejects_unknown_driver_profile(self):
+        with patch.object(web_server.threading, "Thread"):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="gesture test",
+                    script="test script",
+                    motion_mode="gesture",
+                    driver_profile="unknown",
                 )
             )
 
