@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.backend.providers.media_utils import validate_audio
+from app.backend.providers.subtitle.ass_renderer import write_animated_ass
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -263,7 +264,7 @@ def write_srt(subtitles: list[dict], output_path: Path) -> Path:
     return output
 
 
-def write_ass(
+def _write_legacy_ass(
     subtitles: list[dict],
     output_path: Path,
     width: int = 1920,
@@ -296,6 +297,22 @@ Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
         )
     output.write_text(header + "\n".join(dialogue) + "\n", encoding="utf-8-sig")
     return output
+
+
+def write_ass(
+    subtitles: list[dict],
+    output_path: Path,
+    width: int = 1920,
+    height: int = 1080,
+) -> Path:
+    """Write subtitles with the backwards-compatible clean preset."""
+    return write_animated_ass(
+        subtitles,
+        output_path,
+        preset="clean",
+        width=width,
+        height=height,
+    )
 
 
 def generate_subtitles(

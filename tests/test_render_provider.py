@@ -1,5 +1,6 @@
 """Tests for the FFmpeg-only final renderer."""
 
+import inspect
 import unittest
 from pathlib import Path
 
@@ -7,6 +8,12 @@ from app.backend.providers import render
 
 
 class RenderProviderTests(unittest.TestCase):
+    def test_render_video_accepts_caption_style(self):
+        parameters = inspect.signature(render.render_video).parameters
+
+        self.assertIn("caption_style", parameters)
+        self.assertEqual(parameters["caption_style"].default, "clean")
+
     def test_render_command_is_landscape_ffmpeg(self):
         command = render.build_render_command(
             Path("talking.mp4"), Path("subtitle.ass"), Path("final.mp4")

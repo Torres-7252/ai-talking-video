@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from app.backend.providers.media_utils import run_checked, validate_video
-from app.backend.providers.subtitle import write_ass
+from app.backend.providers.subtitle.ass_renderer import write_animated_ass
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -94,6 +94,7 @@ def render_video(
     height: int = 1080,
     fps: int = 25,
     template: str = "talking_head",
+    caption_style: str = "clean",
 ) -> Path:
     """Scale, pad, subtitle, and encode a MuseTalk output with FFmpeg."""
     del title, logo_path, bgm_path, broll_paths, image_paths, template
@@ -112,7 +113,13 @@ def render_video(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     ass_path = output.with_suffix(".ass")
-    write_ass(subtitles, ass_path, width=width, height=height)
+    write_animated_ass(
+        subtitles,
+        ass_path,
+        preset=caption_style,
+        width=width,
+        height=height,
+    )
     command = build_render_command(
         talking, ass_path, output, width=width, height=height, fps=fps
     )
