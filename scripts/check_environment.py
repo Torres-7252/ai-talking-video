@@ -76,6 +76,7 @@ def main() -> int:
         except Exception as exc:
             checks.append((module_name, False, str(exc)))
 
+    from app.backend.providers.avatar import missing_model_files as missing_ditto_files
     from app.backend.providers.lipsync import missing_musetalk_files
     from app.backend.providers.motion import missing_liveportrait_files
     from app.backend.providers.media_utils import validate_audio
@@ -95,6 +96,12 @@ def main() -> int:
     checks.append(
         ("LivePortrait natural motion", not missing_liveportrait, liveportrait_detail)
     )
+
+    missing_ditto = missing_ditto_files()
+    ditto_detail = f"missing {len(missing_ditto)} file(s)"
+    if missing_ditto:
+        ditto_detail += "; run scripts\\install_ditto_runtime.ps1"
+    checks.append(("Ditto realistic avatar", not missing_ditto, ditto_detail))
 
     avatar = PROJECT_ROOT / "avatar" / "avatar.jpg"
     checks.append(("Avatar image", avatar.is_file() and avatar.stat().st_size > 0, str(avatar)))

@@ -284,7 +284,8 @@
         <div class="field"><label>模板</label><select id="template"><option value="football_knowledge">&#9917; 足球知识</option><option value="football_training">&#127939; 足球训练</option><option value="product_promo">&#128176; 产品宣传</option><option value="talking_head">&#127908; 普通口播</option></select></div>
         <div class="field"><label>语速</label><select id="speed"><option value="0.8">0.8x</option><option value="1.0" selected>1.0x</option><option value="1.2">1.2x</option><option value="1.5">1.5x</option></select></div>
       </div>
-      <div class="motion-controls">
+      <div class="field"><label for="avatarEngine">数字人引擎</label><select id="avatarEngine" onchange="updateMotionControls()"><option value="ditto" selected>Ditto 真实模式（推荐）</option><option value="classic">LivePortrait + MuseTalk 经典模式</option></select></div>
+      <div class="motion-controls" id="motionControls">
         <div class="field" style="margin-bottom:0;">
           <label>自然动作</label>
           <label class="motion-toggle"><input type="checkbox" id="motionEnabled" checked onchange="updateMotionControls()"><span>LivePortrait</span></label>
@@ -485,7 +486,7 @@
 
 <script>
 let ws = null, currentTask = null, activeProject = null;
-const STEP_ICONS = { '声音生成':'&#127925;', 'LivePortrait 自然动作':'&#128065;', 'MuseTalk 1.5口型':'&#129302;', '字幕生成':'&#128196;', '1080p横屏合成':'&#127917;', '最终导出':'&#9889;' };
+const STEP_ICONS = { '声音生成':'&#127925;', 'LivePortrait 自然动作':'&#128065;', 'Ditto 真实数字人':'&#129302;', 'MuseTalk 1.5口型':'&#129302;', '字幕生成':'&#128196;', '1080p横屏合成':'&#127917;', '最终导出':'&#9889;' };
 
 document.addEventListener('DOMContentLoaded', () => {
   connectWS(); loadProjects(); checkEnv(); loadAssets();
@@ -494,9 +495,13 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function updateMotionControls() {
-  const enabled = document.getElementById('motionEnabled').checked;
+  const classic = document.getElementById('avatarEngine').value === 'classic';
+  const toggle = document.getElementById('motionEnabled');
+  const enabled = classic && toggle.checked;
   const slider = document.getElementById('motionIntensity');
+  toggle.disabled = !classic;
   slider.disabled = !enabled;
+  document.getElementById('motionControls').style.opacity = classic ? '1' : '0.45';
   document.getElementById('motionValue').textContent = `${slider.value}%`;
 }
 
@@ -642,6 +647,7 @@ async function doGenerate() {
   fd.append('title',title); fd.append('script',script);
   fd.append('template', document.getElementById('template').value);
   fd.append('speed', document.getElementById('speed').value);
+  fd.append('avatar_engine', document.getElementById('avatarEngine').value);
   fd.append('motion_mode', document.getElementById('motionEnabled').checked ? 'natural' : 'off');
   fd.append('motion_style', 'steady');
   fd.append('motion_intensity', String(Number(document.getElementById('motionIntensity').value) / 100));
@@ -658,14 +664,18 @@ async function doGenerate() {
   btn.disabled = false; btn.innerHTML = '&#9889; 开始生成视频';
 }
 
-function initPipelineUI() {
-  const names = ['声音生成','LivePortrait 自然动作','MuseTalk 1.5口型','字幕生成','1080p横屏合成','最终导出'];
+function initPipelineUI(stepNames = null) {
+  const avatarStep = document.getElementById('avatarEngine').value === 'ditto' ? 'Ditto 真实数字人' : 'MuseTalk 1.5口型';
+  const names = stepNames || ['声音生成','LivePortrait 自然动作',avatarStep,'字幕生成','1080p横屏合成','最终导出'];
   document.getElementById('pipelineSteps').innerHTML = names.map((name, index) => `<div class="pipe-step pending" id="step-${name}"><div class="pipe-indicator">${index + 1}</div><div class="step-label"><div class="step-name">${STEP_ICONS[name] || ''} ${name}</div><div class="step-status">等待中</div></div></div>`).join('');
   document.getElementById('logConsole').innerHTML = '';
 }
 
 function renderTask(t) {
   if (!t?.steps) return;
+  if (t.steps.some(s => !document.getElementById('step-'+s.name))) {
+    initPipelineUI(t.steps.map(s => s.name));
+  }
   document.getElementById('taskStatus').textContent = t.status==='completed'?'已完成':t.status==='failed'?'失败':'进行中';
   t.steps.forEach(s=>{
     const el = document.getElementById('step-'+s.name);

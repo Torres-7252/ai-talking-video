@@ -181,12 +181,17 @@ async def api_generate(
     speed: float = Form(1.0),
     template: str = Form("talking_head"),
     resume: bool = Form(False),
+    avatar_engine: str = Form("ditto"),
     motion_mode: str = Form("natural"),
     motion_style: str = Form("steady"),
     motion_intensity: float = Form(0.35),
 ):
     if not title or not script:
         return JSONResponse({"error": "标题和文案不能为空"}, status_code=400)
+    if avatar_engine not in {"ditto", "classic"}:
+        return JSONResponse(
+            {"error": f"Invalid avatar engine: {avatar_engine}"}, status_code=400
+        )
     if motion_mode not in {"natural", "off"}:
         return JSONResponse({"error": f"Invalid motion mode: {motion_mode}"}, status_code=400)
     if motion_style != "steady":
@@ -205,6 +210,7 @@ async def api_generate(
         "id": task_id,
         "project_name": project_name,
         "title": title,
+        "avatar_engine": avatar_engine,
         "motion_mode": motion_mode,
         "motion_style": motion_style,
         "motion_intensity": motion_intensity,
@@ -221,10 +227,24 @@ async def api_generate(
         "log": [],
         "error": None,
     }
+    legacy_motion_step_name = tasks[task_id]["steps"][1]["name"]
+    legacy_avatar_step_name = tasks[task_id]["steps"][2]["name"]
+    motion_step_name = "LivePortrait 自然动作"
+    avatar_step_name = (
+        "Ditto 真实数字人"
+        if avatar_engine == "ditto"
+        else "MuseTalk 1.5口型"
+    )
+    tasks[task_id]["steps"][1]["name"] = motion_step_name
+    tasks[task_id]["steps"][2]["name"] = avatar_step_name
 
     loop = asyncio.get_event_loop()
 
     def update_step(name: str, status: str):
+        name = {
+            legacy_motion_step_name: motion_step_name,
+            legacy_avatar_step_name: avatar_step_name,
+        }.get(name, name)
         for s in tasks[task_id]["steps"]:
             if s["name"] == name:
                 s["status"] = status
@@ -253,6 +273,7 @@ async def api_generate(
                 speed=speed,
                 template=template,
                 resume=resume,
+                avatar_engine=avatar_engine,
                 motion_mode=motion_mode,
                 motion_style=motion_style,
                 motion_intensity=motion_intensity,
@@ -273,9 +294,15 @@ async def api_generate(
             try:
                 update_step("LivePortrait 自然动作", "running")
                 pipeline.step2_motion()
-                motion_status = "done" if motion_mode == "natural" else "skipped"
+                motion_status = (
+                    "done"
+                    if avatar_engine == "classic" and motion_mode == "natural"
+                    else "skipped"
+                )
                 update_step("LivePortrait 自然动作", motion_status)
-                if motion_mode == "natural":
+                if avatar_engine == "ditto":
+                    add_log("面部动作将由 Ditto 与口型联合生成")
+                elif motion_mode == "natural":
                     add_log("LivePortrait 自然动作生成完成")
                 else:
                     add_log("自然动作已关闭，使用快速口型模式")

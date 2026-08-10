@@ -30,6 +30,7 @@ class WebMotionTests(unittest.TestCase):
 
     def test_generate_request_preserves_natural_motion_options(self):
         parameters = inspect.signature(web_server.api_generate).parameters
+        self.assertIn("avatar_engine", parameters)
         self.assertIn("motion_mode", parameters)
         self.assertIn("motion_style", parameters)
         self.assertIn("motion_intensity", parameters)
@@ -42,6 +43,7 @@ class WebMotionTests(unittest.TestCase):
                     speed=1.0,
                     template="talking_head",
                     resume=False,
+                    avatar_engine="classic",
                     motion_mode="natural",
                     motion_style="steady",
                     motion_intensity=0.35,
@@ -52,6 +54,7 @@ class WebMotionTests(unittest.TestCase):
         payload = json.loads(response.body)
         task = web_server.tasks[payload["task_id"]]
         self.assertEqual(task["motion_mode"], "natural")
+        self.assertEqual(task["avatar_engine"], "classic")
         self.assertEqual(task["motion_style"], "steady")
         self.assertEqual(task["motion_intensity"], 0.35)
         self.assertIn("LivePortrait 自然动作", [step["name"] for step in task["steps"]])
@@ -89,6 +92,20 @@ class WebMotionTests(unittest.TestCase):
 
         self.assertEqual(bad_mode.status_code, 400)
         self.assertEqual(bad_intensity.status_code, 400)
+
+    def test_generate_request_defaults_to_ditto_and_rejects_unknown_engine(self):
+        parameters = inspect.signature(web_server.api_generate).parameters
+        self.assertEqual(parameters["avatar_engine"].default.default, "ditto")
+        with patch.object(web_server.threading, "Thread"):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="ditto test",
+                    script="test script",
+                    avatar_engine="unknown",
+                )
+            )
+
+        self.assertEqual(response.status_code, 400)
 
 
 if __name__ == "__main__":

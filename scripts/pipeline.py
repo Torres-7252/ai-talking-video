@@ -134,6 +134,7 @@ class Pipeline:
         speed: float = 1.0,
         template: str = "talking_head",
         resume: bool = False,
+        avatar_engine: str = "ditto",
         motion_mode: str = "natural",
         motion_style: str = "steady",
         motion_intensity: float = 0.35,
@@ -147,12 +148,15 @@ class Pipeline:
         self.speed = speed
         self.template = template
         self.resume = resume
+        if avatar_engine not in {"ditto", "classic"}:
+            raise ValueError(f"Unsupported avatar engine: {avatar_engine}")
         if motion_mode not in {"natural", "off"}:
             raise ValueError(f"Unsupported motion mode: {motion_mode}")
         if motion_style != "steady":
             raise ValueError(f"Unsupported motion style: {motion_style}")
         if not 0.0 <= motion_intensity <= 1.0:
             raise ValueError("Motion intensity must be between 0.0 and 1.0")
+        self.avatar_engine = avatar_engine
         self.motion_mode = motion_mode
         self.motion_style = motion_style
         self.motion_intensity = float(motion_intensity)
@@ -184,6 +188,7 @@ class Pipeline:
             "voice_profile": voice_profile,
             "avatar": "avatar/avatar.jpg",
             "template": template,
+            "avatar_engine": avatar_engine,
             "motion_mode": motion_mode,
             "motion_style": motion_style,
             "motion_intensity": self.motion_intensity,
@@ -282,8 +287,13 @@ class Pipeline:
 
     def step2_motion(self) -> None:
         self._start("motion", "STEP 2: LivePortrait natural motion")
-        if self.motion_mode == "off":
-            self._step_log("motion", "skipped because motion mode is off")
+        if self.avatar_engine == "ditto" or self.motion_mode == "off":
+            reason = (
+                "Ditto handles full facial motion"
+                if self.avatar_engine == "ditto"
+                else "motion mode is off"
+            )
+            self._step_log("motion", f"skipped because {reason}")
             self.update_metadata("motion", "skipped")
             return
 
@@ -335,20 +345,42 @@ class Pipeline:
             raise
 
     def step2_lipsync(self) -> None:
-        self._start("lipsync", "STEP 2: MuseTalk 1.5 lip sync")
+        label = (
+            "Ditto audio-driven avatar"
+            if self.avatar_engine == "ditto"
+            else "MuseTalk 1.5 lip sync"
+        )
+        self._start("lipsync", f"STEP 2: {label}")
         if not self.should_run(self.talking_file, "lipsync"):
             self._finish("lipsync", self.talking_file, resumed=True)
             return
-        avatar = self.lipsync_input
+        avatar = (
+            PROJECT_ROOT / "avatar" / "avatar.jpg"
+            if self.avatar_engine == "ditto"
+            else self.lipsync_input
+        )
         if not avatar.is_file():
             raise FileNotFoundError(f"Lip-sync input does not exist: {avatar}")
-        if self.motion_mode == "natural" and not artifact_is_valid(
-            "motion", avatar
+        if (
+            self.avatar_engine == "classic"
+            and self.motion_mode == "natural"
+            and not artifact_is_valid("motion", avatar)
         ):
             raise RuntimeError(f"Motion artifact is invalid: {avatar}")
         if not artifact_is_valid("voice", self.audio_file):
             raise RuntimeError(f"Voice artifact is invalid: {self.audio_file}")
         try:
+            if self.avatar_engine == "ditto":
+                from app.backend.providers.avatar import generate_avatar
+
+                generate_avatar(
+                    source_path=str(avatar),
+                    audio_path=str(self.audio_file),
+                    output_path=str(self.talking_file),
+                )
+                self._finish("lipsync", self.talking_file)
+                return
+
             from app.backend.providers.lipsync import generate_lipsync
 
             generate_lipsync(
@@ -451,6 +483,9 @@ def main() -> None:
     )
     parser.add_argument("--resume", action="store_true")
     parser.add_argument(
+        "--avatar-engine", default="ditto", choices=("ditto", "classic")
+    )
+    parser.add_argument(
         "--motion-mode", default="natural", choices=("natural", "off")
     )
     parser.add_argument("--motion-style", default="steady", choices=("steady",))
@@ -479,6 +514,7 @@ def main() -> None:
         speed=args.speed,
         template=args.template,
         resume=args.resume,
+        avatar_engine=args.avatar_engine,
         motion_mode=args.motion_mode,
         motion_style=args.motion_style,
         motion_intensity=args.motion_intensity,

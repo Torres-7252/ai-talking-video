@@ -4,7 +4,7 @@ Set-Location $ProjectRoot
 
 Write-Host ""
 Write-Host "  Local AI Talking Video" -ForegroundColor Cyan
-Write-Host "  MuseTalk 1.5 | 1920x1080 | 25 fps" -ForegroundColor DarkCyan
+Write-Host "  Ditto | GPT-SoVITS | 1920x1080 | 25 fps" -ForegroundColor DarkCyan
 Write-Host ""
 
 if (-not (Get-Command python.exe -ErrorAction SilentlyContinue)) {
@@ -16,8 +16,9 @@ Write-Host "[1/2] Checking the local runtime and models..." -ForegroundColor Yel
 & python scripts\check_environment.py
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
-    Write-Host "The environment is not ready. To download MuseTalk models, run:" -ForegroundColor Red
-    Write-Host "powershell -ExecutionPolicy Bypass -File scripts\download_musetalk_models.ps1" -ForegroundColor Gray
+    Write-Host "The environment is not ready. Run the installer named by the failed check." -ForegroundColor Red
+    Write-Host "Ditto: powershell -ExecutionPolicy Bypass -File scripts\install_ditto_runtime.ps1" -ForegroundColor Gray
+    Write-Host "MuseTalk: powershell -ExecutionPolicy Bypass -File scripts\download_musetalk_models.ps1" -ForegroundColor Gray
     exit 1
 }
 

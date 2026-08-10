@@ -1,0 +1,20 @@
+diff --git a/core/atomic_components/putback.py b/core/atomic_components/putback.py
+--- a/core/atomic_components/putback.py
++++ b/core/atomic_components/putback.py
+@@ -1,9 +1,15 @@
+ import cv2
+ import numpy as np
+-from ..utils.blend import blend_images_cy
+ from ..utils.get_mask import get_mask
+ 
+ 
++def blend_images_cy(mask_warped, frame_warped, frame_rgb, result):
++    """Windows fallback for the optional Cython image blender."""
++    mask = mask_warped[:, :, None]
++    blended = mask * frame_warped + (1.0 - mask) * frame_rgb
++    result[:] = np.clip(blended, 0, 255).astype(np.uint8)
++
++
+ class PutBackNumpy:
+     def __init__(
+         self,

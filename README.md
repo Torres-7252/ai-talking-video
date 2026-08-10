@@ -103,6 +103,25 @@ python scripts\check_environment.py
 ```
 
 请仅使用你有权使用的人物图片和声音录音。
+
+## Ditto 真实数字人模式
+
+默认数字人引擎已切换为 Ditto。它直接从语音联合生成人物口型、表情、眨眼和头部微动，避免 LivePortrait 与 MuseTalk 分阶段处理造成的嘴部僵硬。经典模式仍可在网页中选择。
+
+首次安装：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\install_ditto_runtime.ps1
+```
+
+命令行生成：
+
+```powershell
+python scripts\pipeline.py --project ditto-demo --title "Ditto 口播" --script "大家好，这是更自然的本地 AI 口播测试。" --avatar-engine ditto
+```
+
+恢复旧流程时使用 `--avatar-engine classic`。Ditto 使用独立 Python 3.10 子进程，完成后会释放显存；第三方源码和约 2.3GB 权重不会提交到 Git。
+
 # 自然动作增强
 
 项目支持 `LivePortrait -> MuseTalk 1.5` 双阶段模式。LivePortrait 负责克制的眨眼、眼神、表情和头部微动作，MuseTalk 继续根据克隆语音生成中文口型。默认动作模式为 `natural`，原有仅口型路径可通过 `--motion-mode off` 使用。
