@@ -22,6 +22,36 @@ class SubtitleProviderTests(unittest.TestCase):
         self.assertIn("AI", "".join(item["text"] for item in corrected))
         self.assertNotIn("echo", "".join(item["text"] for item in corrected))
 
+    def test_known_transcript_allocates_non_overlapping_word_timings(self):
+        corrected = subtitle.apply_transcript_text(
+            [{"text": "old", "start": 0.2, "end": 2.2, "words": []}],
+            "\u5927\u5bb6\u597d AI \u8bad\u7ec3\u3002",
+        )
+
+        words = [word for segment in corrected for word in segment["words"]]
+
+        self.assertTrue(words)
+        self.assertEqual(words[0]["start"], 0.2)
+        self.assertEqual(words[-1]["end"], 2.2)
+        self.assertTrue(
+            all(
+                left["end"] <= right["start"]
+                for left, right in zip(words, words[1:])
+            )
+        )
+
+    def test_punctuation_does_not_get_an_independent_highlight(self):
+        words = subtitle.allocate_word_timings(
+            "\u8bad\u7ec3\uff0c\u66f4\u7a33\uff01", 0.0, 1.0
+        )
+
+        self.assertNotIn("\uff0c", [word["text"] for word in words])
+        self.assertNotIn("\uff01", [word["text"] for word in words])
+        self.assertEqual(
+            "".join(word["text"] for word in words),
+            "\u8bad\u7ec3\uff0c\u66f4\u7a33\uff01",
+        )
+
     def test_asr_options_use_pinned_cached_models_without_optional_punctuation(self):
         options = subtitle.build_asr_options(device="cuda")
 

@@ -64,6 +64,82 @@ def _clean_asr_text(value: object) -> str:
     return text
 
 
+def _caption_tokens(text: str) -> list[str]:
+    tokens: list[str] = []
+    ascii_run: list[str] = []
+
+    def flush_ascii() -> None:
+        if ascii_run:
+            tokens.append("".join(ascii_run))
+            ascii_run.clear()
+
+    for character in text:
+        if character.isspace():
+            flush_ascii()
+        elif character.isascii() and character.isalnum():
+            ascii_run.append(character)
+        elif "\u3400" <= character <= "\u9fff":
+            flush_ascii()
+            tokens.append(character)
+        else:
+            flush_ascii()
+            if tokens:
+                tokens[-1] += character
+            else:
+                tokens.append(character)
+    flush_ascii()
+    return tokens
+
+
+def allocate_word_timings(text: str, start: float, end: float) -> list[dict]:
+    """Allocate deterministic token timing inside one caption segment."""
+    if end <= start:
+        return []
+    tokens = _caption_tokens(_clean_asr_text(text))
+    if not tokens:
+        return []
+    weights = [
+        max(
+            1,
+            len(re.sub(r"[^A-Za-z0-9\u3400-\u9fff]", "", token)),
+        )
+        for token in tokens
+    ]
+    total_weight = sum(weights)
+    offset = 0
+    words = []
+    for token, weight in zip(tokens, weights):
+        word_start = start + (end - start) * offset / total_weight
+        offset += weight
+        word_end = start + (end - start) * offset / total_weight
+        words.append(
+            {
+                "text": token,
+                "start": round(word_start, 3),
+                "end": round(word_end, 3),
+            }
+        )
+    words[0]["start"] = round(start, 3)
+    words[-1]["end"] = round(end, 3)
+    return words
+
+
+def validate_word_timings(words: list[dict], start: float, end: float) -> bool:
+    previous_end = start
+    for word in words:
+        try:
+            word_start = float(word["start"])
+            word_end = float(word["end"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        if word_start < start or word_end > end or word_end <= word_start:
+            return False
+        if word_start < previous_end:
+            return False
+        previous_end = word_end
+    return bool(words)
+
+
 def _timed_text_segments(text: str, start: float, end: float) -> list[dict]:
     chunks = _split_caption_text(text)
     total_chars = sum(len(chunk) for chunk in chunks)
@@ -81,7 +157,7 @@ def _timed_text_segments(text: str, start: float, end: float) -> list[dict]:
                 "text": chunk,
                 "start": round(chunk_start, 3),
                 "end": round(chunk_end, 3),
-                "words": [],
+                "words": allocate_word_timings(chunk, chunk_start, chunk_end),
             }
         )
     return segments
