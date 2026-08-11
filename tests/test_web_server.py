@@ -56,6 +56,49 @@ class WebAssetUploadTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertEqual(target.read_bytes(), original)
 
+    def test_voice_upload_aligns_audio_to_reference_text_before_replacing(self):
+        observed = {}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+
+            def convert_audio(command, **kwargs):
+                Path(command[-1]).write_bytes(b"converted audio")
+                return SimpleNamespace(returncode=0, stderr=b"")
+
+            def align_audio(path, reference_text):
+                observed["text"] = reference_text
+                path.write_bytes(b"aligned audio")
+                return path
+
+            upload = UploadFile(filename="voice.mp3", file=BytesIO(b"x" * 2048))
+            with (
+                patch.object(web_server, "PROJECT_ROOT", root),
+                patch.object(web_server.subprocess, "run", side_effect=convert_audio),
+                patch(
+                    "app.backend.providers.media_utils.validate_audio",
+                    return_value={"duration": 6.0, "size": 1024, "streams": []},
+                ),
+                patch(
+                    "app.backend.providers.voice.align_reference_audio",
+                    side_effect=align_audio,
+                    create=True,
+                ) as align_reference,
+            ):
+                response = asyncio.run(
+                    web_server.api_upload_voice(
+                        upload, reference_text="the exact spoken reference"
+                    )
+                )
+
+            target = root / "voice" / "references" / "default.wav"
+            saved_audio = target.read_bytes()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(observed["text"], "the exact spoken reference")
+        self.assertEqual(align_reference.call_count, 1)
+        self.assertEqual(saved_audio, b"aligned audio")
+
 
 class WebMotionTests(unittest.TestCase):
     def setUp(self):

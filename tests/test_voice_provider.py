@@ -1,9 +1,13 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+import numpy as np
+import soundfile as sf
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -105,6 +109,99 @@ class VoiceProviderTests(unittest.TestCase):
         self.assertEqual(len(generated), 1)
         self.assertEqual(observed_cwds, [voice.SOVITS_ROOT])
         self.assertEqual(Path.cwd(), original_cwd)
+
+    def test_reference_audio_is_trimmed_before_synthesis(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "reference.wav"
+            sample_rate = 32000
+            audio = np.concatenate(
+                [
+                    np.zeros(sample_rate),
+                    np.full(sample_rate * 4, 0.2),
+                    np.zeros(sample_rate),
+                ]
+            )
+            sf.write(source, audio, sample_rate)
+
+            prepared = voice._prepare_reference_audio(source, root / "cache")
+            prepared_audio, prepared_rate = sf.read(prepared)
+
+        self.assertEqual(prepared_rate, sample_rate)
+        self.assertGreater(len(prepared_audio) / prepared_rate, 4.1)
+        self.assertLess(len(prepared_audio) / prepared_rate, 4.5)
+
+    def test_minimum_duration_scales_with_spoken_text(self):
+        short = voice._minimum_generated_duration("hello", speed=1.0)
+        sentence = voice._minimum_generated_duration(
+            "hello this is a complete sentence", speed=1.0
+        )
+        faster = voice._minimum_generated_duration(
+            "hello this is a complete sentence", speed=1.25
+        )
+
+        self.assertGreater(sentence, short)
+        self.assertLess(faster, sentence)
+
+    def test_generate_voice_retries_audio_that_is_too_short(self):
+        sample_rate = 24000
+        generated = [
+            [(sample_rate, np.zeros(sample_rate))],
+            [(sample_rate, np.zeros(sample_rate * 4))],
+        ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            reference = root / "reference.wav"
+            reference.touch()
+            output = root / "speech.wav"
+            with (
+                mock.patch(
+                    "voice.load_voice_profile",
+                    return_value={
+                        "reference_audio": reference,
+                        "reference_text": "reference transcript",
+                        "language": "zh",
+                    },
+                ),
+                mock.patch("voice._prepare_reference_audio", return_value=reference),
+                mock.patch("voice._get_tts", return_value=object()),
+                mock.patch("voice._run_tts", side_effect=generated) as run_tts,
+                mock.patch(
+                    "voice.validate_audio",
+                    return_value={"size": 192044, "duration": 4.0},
+                ),
+            ):
+                result = voice.generate_voice(
+                    "hello this is a complete sentence", str(output)
+                )
+
+            written, written_rate = sf.read(result)
+
+        self.assertEqual(run_tts.call_count, 2)
+        self.assertEqual(run_tts.call_args_list[0].args[1]["seed"], 42)
+        self.assertEqual(run_tts.call_args_list[1].args[1]["seed"], 2026)
+        self.assertFalse(run_tts.call_args_list[0].args[1]["parallel_infer"])
+        self.assertEqual(written_rate, sample_rate)
+        self.assertEqual(len(written), sample_rate * 4)
+
+    def test_reference_window_uses_matching_asr_timestamps(self):
+        result = [
+            {
+                "text": "intro hello world extra",
+                "timestamp": [
+                    [0, 400],
+                    [500, 900],
+                    [900, 1300],
+                    [1400, 1800],
+                ],
+            }
+        ]
+
+        start, end = voice._find_reference_window(result, "hello world")
+
+        self.assertEqual(start, 0.5)
+        self.assertEqual(end, 1.3)
 
 
 if __name__ == "__main__":

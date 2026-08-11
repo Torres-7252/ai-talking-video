@@ -576,7 +576,10 @@ async def api_upload_voice(
                 return JSONResponse({"error": f"参考音频转换失败: {detail}"}, status_code=400)
 
             from app.backend.providers.media_utils import validate_audio
+            from app.backend.providers.voice import align_reference_audio
 
+            validate_audio(temporary_audio)
+            align_reference_audio(temporary_audio, reference_text)
             validate_audio(temporary_audio)
             with tempfile.NamedTemporaryFile(
                 prefix=".default-", suffix=".json", dir=voice_dir,
