@@ -633,7 +633,10 @@ async function selectProject(name) {
   try {
     const r = await fetch(`/api/projects/${name}`); const p = await r.json();
     document.getElementById('previewLabel').textContent = p.metadata.title||name;
-    const src = p.files?.final?.url || p.files?.packaged?.url || null;
+    const src = p.files?.['final.mp4']?.url
+      || p.files?.['packaged.mp4']?.url
+      || p.files?.['talking.mp4']?.url
+      || null;
     if (src) {
       document.getElementById('previewContent').innerHTML = `<div class="preview-area"><video controls autoplay loop src="${src}"></video></div>
         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
