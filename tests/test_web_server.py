@@ -100,6 +100,32 @@ class WebAssetUploadTests(unittest.TestCase):
         self.assertEqual(saved_audio, b"aligned audio")
 
 
+class WebProjectDeleteTests(unittest.TestCase):
+    def setUp(self):
+        web_server.tasks.clear()
+
+    def test_running_project_cannot_be_deleted(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            project = root / "outputs" / "active-project"
+            project.mkdir(parents=True)
+            (project / "script.txt").write_text("active", encoding="utf-8")
+            web_server.tasks["task-1"] = {
+                "project_name": "active-project",
+                "status": "running",
+            }
+
+            with patch.object(web_server, "PROJECT_ROOT", root):
+                response = asyncio.run(
+                    web_server.api_delete_project("active-project")
+                )
+
+            project_still_exists = project.is_dir()
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(project_still_exists)
+
+
 class WebMotionTests(unittest.TestCase):
     def setUp(self):
         web_server.tasks.clear()

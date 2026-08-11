@@ -268,8 +268,17 @@ class Pipeline:
         self.update_metadata(step, status, artifact=artifact)
 
     def _fail(self, step: str, exc: Exception) -> None:
-        self._step_log(step, f"failed: {exc}")
-        self.update_metadata(step, "failed", str(exc))
+        try:
+            self._step_log(step, f"failed: {exc}")
+        except OSError as log_error:
+            print(f"  [pipeline] Could not write {step} failure log: {log_error}")
+        try:
+            self.update_metadata(step, "failed", str(exc))
+        except OSError as metadata_error:
+            print(
+                f"  [pipeline] Could not save {step} failure metadata: "
+                f"{metadata_error}"
+            )
 
     def step0_setup(self) -> None:
         self._start("setup", "STEP 0: Save script")

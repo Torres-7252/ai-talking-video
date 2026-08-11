@@ -45,6 +45,21 @@ class PipelineResumeTests(unittest.TestCase):
             self.assertTrue(artifact_is_valid("subtitle", output))
             self.assertFalse(pipeline.should_run(output, "subtitle"))
 
+    def test_failure_reporting_does_not_mask_error_when_project_was_removed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project = Path(temp_dir) / "removed-project"
+            with patch("scripts.pipeline._resolve_project_dir", return_value=project):
+                pipeline = Pipeline("removed-project", "title", "text")
+
+            pipeline.metadata_file.unlink()
+            project.rmdir()
+            pipeline._fail("voice", RuntimeError("primary generation error"))
+
+        self.assertEqual(
+            pipeline.metadata["steps"]["voice"]["error"],
+            "primary generation error",
+        )
+
 
 class PipelineMotionTests(unittest.TestCase):
     def make_pipeline(self, root: Path, **kwargs) -> Pipeline:

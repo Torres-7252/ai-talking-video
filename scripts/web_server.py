@@ -143,6 +143,20 @@ async def api_delete_project(project_name: str):
         proj_dir = resolve_project_dir(project_name)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
+    active_task = next(
+        (
+            task
+            for task in tasks.values()
+            if task.get("project_name") == project_name
+            and task.get("status") == "running"
+        ),
+        None,
+    )
+    if active_task is not None:
+        return JSONResponse(
+            {"error": "项目正在生成，完成或失败后才能删除"},
+            status_code=409,
+        )
     if not proj_dir.exists():
         return JSONResponse({"error": "项目不存在"}, status_code=404)
 
