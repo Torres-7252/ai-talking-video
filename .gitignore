@@ -16,6 +16,7 @@ app/backend/providers/avatar/Ditto/
 .venv-mimicmotion/
 .venv-hf-download/
 .venv-ditto/
+.venv-cosyvoice/
 .runtime/
 motion/drivers/
 motion/templates/*.pkl

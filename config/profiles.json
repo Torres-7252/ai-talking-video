@@ -6,6 +6,15 @@
       "provider": "gpt-sovits",
       "reference_audio": "./voice/references/default.wav",
       "reference_text": "大家好，我是AI足球教练。今天我们来聊一个很多球友都关心的问题。"
+    },
+    {
+      "id": "energetic_male",
+      "name": "活力男声",
+      "provider": "cosyvoice",
+      "speaker": "中文男",
+      "mode": "sft",
+      "speed_multiplier": 1.08,
+      "instruct": "Theo 'Crimson', is a fiery, passionate rebel leader. Fights with fervor for justice, but struggles with impulsiveness.<|endofprompt|>"
     }
   ],
   "avatars": [

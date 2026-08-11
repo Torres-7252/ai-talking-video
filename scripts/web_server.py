@@ -34,6 +34,16 @@ tasks: dict = {}
 ws_clients: list[WebSocket] = []
 
 
+def configured_voice_ids() -> set[str]:
+    config_path = PROJECT_ROOT / "config" / "profiles.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    return {
+        str(profile["id"])
+        for profile in config.get("voices", [])
+        if profile.get("id")
+    }
+
+
 def _safe_path_component(value: str, label: str) -> str:
     if not value or value in {".", ".."} or Path(value).name != value:
         raise ValueError(f"Invalid {label}: {value!r}")
@@ -205,8 +215,12 @@ async def api_generate(
     caption_style: str = Form("clean"),
     driver_profile: str = Form("subtle_presenter"),
 ):
+    if not isinstance(voice, str):
+        voice = "default"
     if not title or not script:
         return JSONResponse({"error": "标题和文案不能为空"}, status_code=400)
+    if voice not in configured_voice_ids():
+        return JSONResponse({"error": f"Invalid voice: {voice}"}, status_code=400)
     if avatar_engine not in {"ditto", "classic"}:
         return JSONResponse(
             {"error": f"Invalid avatar engine: {avatar_engine}"}, status_code=400
@@ -241,6 +255,7 @@ async def api_generate(
         "id": task_id,
         "project_name": project_name,
         "title": title,
+        "voice": voice,
         "avatar_engine": avatar_engine,
         "motion_mode": motion_mode,
         "motion_style": motion_style,

@@ -284,6 +284,7 @@
         <div class="field"><label>模板</label><select id="template"><option value="football_knowledge">&#9917; 足球知识</option><option value="football_training">&#127939; 足球训练</option><option value="product_promo">&#128176; 产品宣传</option><option value="talking_head">&#127908; 普通口播</option></select></div>
         <div class="field"><label>语速</label><select id="speed"><option value="0.8">0.8x</option><option value="1.0" selected>1.0x</option><option value="1.2">1.2x</option><option value="1.5">1.5x</option></select></div>
       </div>
+      <div class="field"><label for="voice">音色</label><select id="voice"><option value="energetic_male" selected>活力男声</option><option value="default">我的声音</option></select></div>
       <div class="field"><label for="avatarEngine">数字人引擎</label><select id="avatarEngine" onchange="updateMotionControls()"><option value="ditto" selected>Ditto 真实模式（推荐）</option><option value="classic">LivePortrait + MuseTalk 经典模式</option></select></div>
       <div class="field"><label for="captionStyle">字幕动效</label><select id="captionStyle"><option value="clean" selected>清晰逐词高亮</option><option value="pop">弹跳强调</option><option value="bar">信息条</option></select></div>
       <div class="motion-controls" id="motionControls">
@@ -669,6 +670,7 @@ async function doGenerate() {
   fd.append('title',title); fd.append('script',script);
   fd.append('template', document.getElementById('template').value);
   fd.append('speed', document.getElementById('speed').value);
+  fd.append('voice', document.getElementById('voice').value);
   fd.append('avatar_engine', document.getElementById('avatarEngine').value);
   fd.append('motion_mode', document.getElementById('motionMode').value);
   fd.append('motion_style', 'steady');

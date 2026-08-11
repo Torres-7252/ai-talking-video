@@ -17,6 +17,7 @@ import numpy as np
 import soundfile as sf
 
 from app.backend.providers.media_utils import validate_audio
+from . import cosyvoice
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
@@ -67,6 +68,15 @@ def load_voice_profile(name: str = "default") -> dict:
         "reference_text": reference_text,
         "language": str(profile.get("language") or "zh"),
     }
+
+
+def load_configured_voice_profile(name: str = "default") -> dict:
+    config_path = PROJECT_ROOT / "config" / "profiles.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    for profile in config.get("voices", []):
+        if profile.get("id") == name:
+            return dict(profile)
+    raise ValueError(f"Unknown voice profile: {name}")
 
 
 def _find_ref_audio(voice_profile: str = "default") -> str:
@@ -271,6 +281,15 @@ def generate_voice(
     clean_text = _normalize_tts_text(text)
     if not clean_text:
         raise ValueError("Speech text cannot be empty")
+
+    configured_profile = load_configured_voice_profile(voice_profile)
+    if configured_profile.get("provider") == "cosyvoice":
+        return cosyvoice.generate_cosyvoice(
+            clean_text,
+            output_path,
+            configured_profile,
+            speed,
+        )
 
     output = Path(output_path).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)

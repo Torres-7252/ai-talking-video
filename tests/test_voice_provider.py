@@ -42,6 +42,39 @@ class VoiceProviderTests(unittest.TestCase):
             "大家好，我是AI足球教练。今天我们来聊一个很多球友都关心的问题。",
         )
 
+    def test_project_has_energetic_male_cosyvoice_profile(self):
+        profile = voice.load_configured_voice_profile("energetic_male")
+
+        self.assertEqual(profile["name"], "活力男声")
+        self.assertEqual(profile["provider"], "cosyvoice")
+        self.assertEqual(profile["speaker"], "中文男")
+        self.assertEqual(profile["mode"], "sft")
+        self.assertGreater(profile["speed_multiplier"], 1.0)
+        self.assertIn("passionate", profile["instruct"])
+        self.assertTrue(profile["instruct"].endswith("<|endofprompt|>"))
+
+    def test_generate_voice_dispatches_cosyvoice_profile(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "speech.wav"
+            with mock.patch(
+                "voice.cosyvoice.generate_cosyvoice",
+                return_value=output,
+            ) as generate_cosyvoice:
+                result = voice.generate_voice(
+                    "绿茵进化",
+                    str(output),
+                    voice_profile="energetic_male",
+                    speed=1.05,
+                )
+
+        self.assertEqual(result, output)
+        self.assertEqual(generate_cosyvoice.call_count, 1)
+        args = generate_cosyvoice.call_args.args
+        self.assertEqual(args[0], "绿茵进化。")
+        self.assertEqual(args[1], str(output))
+        self.assertEqual(args[2]["speaker"], "中文男")
+        self.assertEqual(args[3], 1.05)
+
     def test_tts_config_uses_existing_absolute_model_paths(self):
         config = voice.build_tts_config()["custom"]
 

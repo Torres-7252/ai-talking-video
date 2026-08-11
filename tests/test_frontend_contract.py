@@ -16,5 +16,16 @@ class FrontendContractTests(unittest.TestCase):
         self.assertNotIn("p.files?.final?.url", html)
 
 
+    def test_generate_form_selects_and_submits_energetic_male_voice(self):
+        html = FRONTEND.read_text(encoding="utf-8")
+
+        self.assertIn('select id="voice"', html)
+        self.assertIn('value="energetic_male" selected', html)
+        self.assertIn(
+            "fd.append('voice', document.getElementById('voice').value)",
+            html,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

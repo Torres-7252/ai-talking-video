@@ -165,6 +165,44 @@ class WebMotionTests(unittest.TestCase):
         self.assertEqual(task["caption_style"], "pop")
         self.assertIn("LivePortrait 自然动作", [step["name"] for step in task["steps"]])
 
+    def test_generate_request_preserves_energetic_male_voice(self):
+        with patch.object(web_server.threading, "Thread"):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="voice test",
+                    script="test script",
+                    voice="energetic_male",
+                    avatar_engine="ditto",
+                    motion_mode="natural",
+                    motion_style="steady",
+                    motion_intensity=0.35,
+                    caption_style="clean",
+                    driver_profile="subtle_presenter",
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = json.loads(response.body)
+        self.assertEqual(web_server.tasks[payload["task_id"]]["voice"], "energetic_male")
+
+    def test_generate_request_rejects_unknown_voice(self):
+        with patch.object(web_server.threading, "Thread"):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="voice test",
+                    script="test script",
+                    voice="unknown",
+                    avatar_engine="ditto",
+                    motion_mode="natural",
+                    motion_style="steady",
+                    motion_intensity=0.35,
+                    caption_style="clean",
+                    driver_profile="subtle_presenter",
+                )
+            )
+
+        self.assertEqual(response.status_code, 400)
+
     def test_generate_request_keeps_chinese_title_out_of_project_path(self):
         with patch.object(web_server.threading, "Thread"):
             response = asyncio.run(
