@@ -170,7 +170,7 @@ if (-not $ModelIntegrityReady -and $PSCmdlet.ShouldProcess($Models, 'Download an
             '-m', 'pip', 'install', '--upgrade', 'huggingface_hub[hf_xet]==0.36.2'
         )
     }
-    $env:HF_XET_HIGH_PERFORMANCE = '1'
+    $env:HF_XET_FIXED_DOWNLOAD_CONCURRENCY = '8'
     Ensure-HfArtifact -Repository 'tencent/MimicMotion' -Filename 'MimicMotion_1-1.pth' -Destination $Models -Size 3049867447 -Sha256 'b812659ea273b2758c918facf759af5d7cad9564dc35156c59ec17e93f9749a4'
 
     $DWPose = Join-Path $Models 'DWPose'

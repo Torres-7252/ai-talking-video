@@ -45,8 +45,9 @@ class MimicMotionInstallerTests(unittest.TestCase):
             self.script,
         )
 
-    def test_downloader_uses_xet_high_performance_mode(self):
-        self.assertIn("HF_XET_HIGH_PERFORMANCE", self.script)
+    def test_downloader_uses_memory_safe_xet_concurrency(self):
+        self.assertIn("HF_XET_FIXED_DOWNLOAD_CONCURRENCY", self.script)
+        self.assertNotIn("HF_XET_HIGH_PERFORMANCE", self.script)
         self.assertIn("huggingface_hub[hf_xet]", self.script)
 
     def test_svd_uses_public_byte_identical_mirror(self):
