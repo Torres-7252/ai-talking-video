@@ -6,6 +6,7 @@ import asyncio
 import json
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -487,17 +488,28 @@ async def api_upload_avatar(file: UploadFile = File(...)):
     if len(content) > 50 * 1024 * 1024:
         return JSONResponse({"error": "文件过大，文件大小需小于 50MB"}, status_code=400)
 
+    temporary_target = None
     try:
         from io import BytesIO
         from PIL import Image
 
+        with tempfile.NamedTemporaryFile(
+            prefix=".avatar-", suffix=".jpg", dir=avatar_dir, delete=False
+        ) as temporary_file:
+            temporary_target = Path(temporary_file.name)
         with Image.open(BytesIO(content)) as image:
             image.load()
             if image.width < 512 or image.height < 512:
                 return JSONResponse({"error": "图片分辨率过低，宽高需至少 512 像素"}, status_code=400)
-            image.convert("RGB").save(target, "JPEG", quality=95, optimize=True)
+            image.convert("RGB").save(
+                temporary_target, "JPEG", quality=95, optimize=True
+            )
+        temporary_target.replace(target)
     except Exception as exc:
         return JSONResponse({"error": f"无法读取人物图片: {exc}"}, status_code=400)
+    finally:
+        if temporary_target is not None:
+            temporary_target.unlink(missing_ok=True)
 
     return JSONResponse({
         "ok": True,
@@ -537,31 +549,49 @@ async def api_upload_voice(
             return JSONResponse({"error": "请填写参考音频对应的原文"}, status_code=400)
 
         target = voice_dir / "default.wav"
-        result = subprocess.run(
-            [
-                "ffmpeg", "-y", "-v", "error", "-i", "pipe:0",
-                "-t", "10", "-ac", "1", "-ar", "32000",
-                "-c:a", "pcm_s16le", str(target),
-            ],
-            input=content,
-            capture_output=True,
-            timeout=120,
-        )
-        if result.returncode != 0:
-            detail = result.stderr.decode("utf-8", errors="replace").strip()
-            return JSONResponse({"error": f"参考音频转换失败: {detail}"}, status_code=400)
+        metadata_target = voice_dir / "default.json"
+        temporary_audio = None
+        temporary_metadata = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                prefix=".default-", suffix=".wav", dir=voice_dir, delete=False
+            ) as temporary_file:
+                temporary_audio = Path(temporary_file.name)
+            result = subprocess.run(
+                [
+                    "ffmpeg", "-y", "-v", "error", "-i", "pipe:0",
+                    "-t", "10", "-ac", "1", "-ar", "32000",
+                    "-c:a", "pcm_s16le", str(temporary_audio),
+                ],
+                input=content,
+                capture_output=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                detail = result.stderr.decode("utf-8", errors="replace").strip()
+                return JSONResponse({"error": f"参考音频转换失败: {detail}"}, status_code=400)
 
-        from app.backend.providers.media_utils import validate_audio
+            from app.backend.providers.media_utils import validate_audio
 
-        validate_audio(target)
-        (voice_dir / "default.json").write_text(
-            json.dumps(
-                {"reference_text": reference_text, "language": "zh"},
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
+            validate_audio(temporary_audio)
+            with tempfile.NamedTemporaryFile(
+                prefix=".default-", suffix=".json", dir=voice_dir,
+                delete=False, mode="w", encoding="utf-8",
+            ) as metadata_file:
+                temporary_metadata = Path(metadata_file.name)
+                json.dump(
+                    {"reference_text": reference_text, "language": "zh"},
+                    metadata_file,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            temporary_audio.replace(target)
+            temporary_metadata.replace(metadata_target)
+        finally:
+            if temporary_audio is not None:
+                temporary_audio.unlink(missing_ok=True)
+            if temporary_metadata is not None:
+                temporary_metadata.unlink(missing_ok=True)
 
         return JSONResponse({
             "ok": True,

@@ -569,10 +569,14 @@ async function uploadAvatar(file) {
   const fd = new FormData(); fd.append('file', file);
   document.getElementById('avatarName').textContent = '上传中...';
   try {
-    const r = await fetch('/api/assets/avatar', {method:'POST',body:fd}); const d = await r.json();
-    toast(d.ok ? '人物图片上传成功' : (d.error||'失败'), d.ok ? 'success' : 'error');
-  } catch(e) { toast('上传失败: '+e, 'error'); }
-  loadAssets();
+    const r = await fetch('/api/assets/avatar', {method:'POST',body:fd});
+    const d = await readApiResponse(r);
+    toast(d.ok ? '人物图片上传成功' : '上传失败', d.ok ? 'success' : 'error');
+  } catch(e) { toast('上传失败: '+(e.message||e), 'error'); }
+  finally {
+    document.getElementById('avatarFile').value = '';
+    await loadAssets();
+  }
 }
 
 async function uploadVoice(file) {
@@ -580,10 +584,22 @@ async function uploadVoice(file) {
   const fd = new FormData(); fd.append('file', file); fd.append('reference_text', document.getElementById('referenceText').value.trim());
   document.getElementById('voiceName').textContent = '上传中...';
   try {
-    const r = await fetch('/api/assets/voice', {method:'POST',body:fd}); const d = await r.json();
-    toast(d.ok ? '参考音频上传成功' : (d.error||'失败'), d.ok ? 'success' : 'error');
-  } catch(e) { toast('上传失败: '+e, 'error'); }
-  loadAssets();
+    const r = await fetch('/api/assets/voice', {method:'POST',body:fd});
+    const d = await readApiResponse(r);
+    toast(d.ok ? '参考音频上传成功' : '上传失败', d.ok ? 'success' : 'error');
+  } catch(e) { toast('上传失败: '+(e.message||e), 'error'); }
+  finally {
+    document.getElementById('voiceFile').value = '';
+    await loadAssets();
+  }
+}
+
+async function readApiResponse(response) {
+  let payload = {};
+  try { payload = await response.json(); }
+  catch (error) { throw new Error(`服务返回异常 (${response.status})`); }
+  if (!response.ok) throw new Error(payload.error || `请求失败 (${response.status})`);
+  return payload;
 }
 
 async function loadProjects() {

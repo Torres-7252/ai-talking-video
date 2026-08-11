@@ -3,8 +3,14 @@
 import asyncio
 import inspect
 import json
+import tempfile
 import unittest
+from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
+
+from fastapi import UploadFile
 
 from scripts import web_server
 
@@ -22,6 +28,33 @@ class WebPathTests(unittest.TestCase):
         path = web_server.resolve_project_file("project", "final.mp4")
         outputs = (web_server.PROJECT_ROOT / "outputs").resolve()
         self.assertTrue(path.is_relative_to(outputs))
+
+
+class WebAssetUploadTests(unittest.TestCase):
+    def test_failed_voice_conversion_preserves_existing_reference(self):
+        original = b"existing valid reference audio"
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            target = root / "voice" / "references" / "default.wav"
+            target.parent.mkdir(parents=True)
+            target.write_bytes(original)
+
+            def fail_after_opening_output(command, **kwargs):
+                Path(command[-1]).write_bytes(b"")
+                return SimpleNamespace(returncode=1, stderr=b"decode failed")
+
+            upload = UploadFile(filename="broken.mp3", file=BytesIO(b"x" * 2048))
+            with (
+                patch.object(web_server, "PROJECT_ROOT", root),
+                patch.object(web_server.subprocess, "run", side_effect=fail_after_opening_output),
+            ):
+                response = asyncio.run(
+                    web_server.api_upload_voice(upload, reference_text="reference text")
+                )
+
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(target.read_bytes(), original)
 
 
 class WebMotionTests(unittest.TestCase):
