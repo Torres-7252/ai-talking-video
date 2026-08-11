@@ -96,6 +96,25 @@ class WebMotionTests(unittest.TestCase):
         self.assertEqual(task["caption_style"], "pop")
         self.assertIn("LivePortrait 自然动作", [step["name"] for step in task["steps"]])
 
+    def test_generate_request_keeps_chinese_title_out_of_project_path(self):
+        with patch.object(web_server.threading, "Thread"):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="绿茵进化开发者介绍",
+                    script="测试文案",
+                    avatar_engine="ditto",
+                    motion_mode="natural",
+                    motion_style="steady",
+                    motion_intensity=0.35,
+                    caption_style="clean",
+                    driver_profile="subtle_presenter",
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        project_name = json.loads(response.body)["project_name"]
+        self.assertTrue(project_name.isascii())
+
     def test_generate_request_rejects_invalid_motion_options(self):
         parameters = inspect.signature(web_server.api_generate).parameters
         self.assertIn("motion_mode", parameters)

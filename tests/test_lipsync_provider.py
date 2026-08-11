@@ -16,6 +16,27 @@ from app.backend.providers import lipsync
 
 
 class MuseTalkJobTests(unittest.TestCase):
+    def test_job_workspace_does_not_inherit_unicode_output_path(self):
+        output = Path("outputs") / "中文项目" / "talking.mp4"
+
+        config, result_dir, generated = lipsync._job_paths(output)
+
+        self.assertTrue(str(config).isascii())
+        self.assertTrue(str(result_dir).isascii())
+        self.assertTrue(str(generated).isascii())
+        self.assertTrue(config.is_relative_to(lipsync.MUSETALK_JOBS_PATH))
+
+    def test_staged_inputs_have_ascii_paths_and_preserve_bytes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "人物动作.mp4"
+            source.write_bytes(b"motion bytes")
+            work_dir = Path(temp_dir) / "ascii-work"
+
+            staged = lipsync.stage_musetalk_input(source, work_dir, "source")
+
+            self.assertTrue(str(staged).isascii())
+            self.assertEqual(staged.read_bytes(), source.read_bytes())
+
     def test_build_job_uses_official_v15_cli_contract(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp = Path(temp_dir)

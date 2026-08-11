@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import pickle
 import shutil
@@ -21,6 +22,7 @@ from app.backend.providers.media_utils import validate_audio, validate_video
 PROJECT_ROOT = Path(__file__).resolve().parents[4]
 MUSETALK_PATH = PROJECT_ROOT / "app" / "backend" / "providers" / "lipsync" / "MuseTalk"
 COMPAT_PATH = PROJECT_ROOT / "app" / "backend" / "providers" / "lipsync" / "compat"
+MUSETALK_JOBS_PATH = PROJECT_ROOT / ".runtime" / "musetalk"
 EXPECTED_MODEL_SIZES = {
     "models/musetalkV15/unet.pth": 3_400_074_924,
     "musetalk/utils/face_detection/detection/sfd/s3fd.pth": 89_843_225,
@@ -61,11 +63,27 @@ def missing_musetalk_files() -> list[Path]:
 
 
 def _job_paths(output_path: Path) -> tuple[Path, Path, Path]:
-    work_dir = output_path.parent / ".musetalk" / output_path.stem
+    output = Path(output_path).resolve()
+    job_id = hashlib.sha256(str(output).encode("utf-8")).hexdigest()[:20]
+    work_dir = MUSETALK_JOBS_PATH / job_id
     config_path = work_dir / "inference.yaml"
     result_dir = work_dir / "results"
-    generated_path = result_dir / "v15" / output_path.name
+    generated_path = result_dir / "v15" / output.name
     return config_path, result_dir, generated_path
+
+
+def stage_musetalk_input(source_path: Path, work_dir: Path, name: str) -> Path:
+    """Copy an input to an ASCII-only path for OpenCV on Windows."""
+    source = Path(source_path).resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"MuseTalk input does not exist: {source}")
+    suffix = source.suffix.lower()
+    if not suffix.isascii():
+        raise ValueError(f"MuseTalk input extension must be ASCII: {source.suffix}")
+    staged = Path(work_dir).resolve() / "inputs" / f"{name}{suffix}"
+    staged.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, staged)
+    return staged
 
 
 def build_musetalk_job(
@@ -393,10 +411,16 @@ def generate_lipsync(
 
     output.parent.mkdir(parents=True, exist_ok=True)
     inference_avatar = prepare_lipsync_input(avatar, output)
-    job, command, cwd = build_musetalk_job(
-        inference_avatar, audio, output, use_fp16=use_fp16
-    )
     config_path, result_dir, generated_path = _job_paths(output)
+    if result_dir.exists():
+        shutil.rmtree(result_dir)
+    staged_avatar = stage_musetalk_input(
+        inference_avatar, config_path.parent, "source"
+    )
+    staged_audio = stage_musetalk_input(audio, config_path.parent, "audio")
+    job, command, cwd = build_musetalk_job(
+        staged_avatar, staged_audio, output, use_fp16=use_fp16
+    )
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         yaml.safe_dump(job, allow_unicode=True, sort_keys=False),
@@ -434,7 +458,7 @@ def generate_lipsync(
     _validate_talking_video(generated_path)
     finalize_lipsync_output(
         generated_path,
-        inference_avatar,
+        staged_avatar,
         result_dir,
         output,
         mouth_detail_strength,

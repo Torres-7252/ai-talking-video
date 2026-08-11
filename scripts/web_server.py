@@ -216,7 +216,11 @@ async def api_generate(
         )
 
     task_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe = "".join(c for c in title[:30] if c not in '<>:"/\\|?*').strip()
+    safe = "".join(
+        c for c in title[:30]
+        if c.isascii() and (c.isalnum() or c in " ._-")
+    ).strip()
+    safe = "_".join(safe.split())
     project_name = f"{task_id}_{safe}" if safe else task_id
 
     tasks[task_id] = {
