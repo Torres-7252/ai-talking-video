@@ -2,7 +2,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -81,6 +81,29 @@ class CosyVoiceProviderTests(unittest.TestCase):
                         1.0,
                     )
 
+    def test_run_cosyvoice_stops_process_tree_after_timeout(self):
+        import subprocess
+
+        process = MagicMock()
+        process.poll.return_value = None
+        process.wait.side_effect = subprocess.TimeoutExpired(["cosyvoice"], 1)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_path = Path(temp_dir) / "cosyvoice.log"
+            with (
+                patch.object(cosyvoice.subprocess, "Popen", return_value=process),
+                patch.object(cosyvoice.subprocess, "run") as taskkill,
+                self.assertRaisesRegex(RuntimeError, "timed out"),
+            ):
+                cosyvoice.run_cosyvoice(
+                    ["cosyvoice"], log_path=log_path, timeout_seconds=1
+                )
+
+        taskkill.assert_called_once_with(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+        )
+
     def test_runner_uses_official_instruct_api(self):
         runner = (PROJECT_ROOT / "scripts" / "cosyvoice_runner.py").read_text(
             encoding="utf-8"
@@ -95,6 +118,8 @@ class CosyVoiceProviderTests(unittest.TestCase):
         self.assertIn("manual_seed", runner)
         self.assertIn("_minimum_generated_duration", runner)
         self.assertIn("generated_duration >= minimum_duration", runner)
+        self.assertIn("fp16=False", runner)
+        self.assertIn("torch.isfinite", runner)
 
     def test_installer_stops_when_native_dependency_install_fails(self):
         installer = (

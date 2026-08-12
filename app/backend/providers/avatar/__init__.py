@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Iterable
 
@@ -14,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 DITTO_ROOT = Path(__file__).resolve().parent / "Ditto"
 CHECKPOINT_ROOT = DITTO_ROOT / "checkpoints"
 RUNTIME_PYTHON = PROJECT_ROOT / ".venv-liveportrait" / "Scripts" / "python.exe"
+DITTO_TIMEOUT_SECONDS = 15 * 60
 
 REQUIRED_MODEL_FILES = (
     Path("ditto_cfg/v0.4_hubert_cfg_pytorch.pkl"),
@@ -66,6 +68,61 @@ def _format_missing(paths: Iterable[Path]) -> str:
     return ", ".join(str(path).replace("\\", "/") for path in paths)
 
 
+def _log_tail(log_path: Path, limit: int = 4000) -> str:
+    if not log_path.is_file():
+        return "No Ditto log was written."
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    return text[-limit:].strip() or "No Ditto output was written."
+
+
+def _terminate_process_tree(process: subprocess.Popen) -> None:
+    """Stop Ditto and its Python worker when a timed-out run is wedged."""
+    if process.poll() is not None:
+        return
+    if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+        )
+    else:
+        process.kill()
+
+
+def run_ditto(
+    command: list[str],
+    *,
+    log_path: Path,
+    timeout_seconds: int = DITTO_TIMEOUT_SECONDS,
+    cwd: Path = DITTO_ROOT,
+    environment: dict[str, str] | None = None,
+) -> None:
+    """Run Ditto with a bounded lifetime and a persistent diagnostic log."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w", encoding="utf-8", errors="replace") as log_file:
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            env=environment,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            return_code = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired as exc:
+            _terminate_process_tree(process)
+            raise RuntimeError(
+                f"Ditto timed out after {timeout_seconds // 60} minutes. "
+                f"See {log_path.name}: {_log_tail(log_path)}"
+            ) from exc
+
+    if return_code:
+        raise RuntimeError(
+            f"Ditto exited with code {return_code}. See {log_path.name}: {_log_tail(log_path)}"
+        )
+
+
 def generate_avatar(source_path: str, audio_path: str, output_path: str) -> Path:
     source = Path(source_path).resolve()
     audio = Path(audio_path).resolve()
@@ -89,9 +146,9 @@ def generate_avatar(source_path: str, audio_path: str, output_path: str) -> Path
     command = build_inference_command(source, audio, output)
     environment = os.environ.copy()
     environment["PYTHONUNBUFFERED"] = "1"
+    log_path = output.with_name("ditto.log")
     print(f"  [avatar] Ditto: {source.name} + {audio.name} -> {output.name}")
-    subprocess.run(command, cwd=DITTO_ROOT, env=environment, check=True)
+    run_ditto(command, log_path=log_path, environment=environment)
     validate_video(output)
     print(f"  [avatar] Generated: {output}")
     return output
-

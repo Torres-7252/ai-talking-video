@@ -17,6 +17,7 @@ import numpy as np
 import soundfile as sf
 
 from app.backend.providers.media_utils import validate_audio
+from scripts.output_paths import OUTPUTS_ROOT
 from . import cosyvoice
 
 
@@ -24,8 +25,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 SOVITS_ROOT = PROJECT_ROOT / "voice" / "models" / "GPT-SoVITS"
 GPT_SOVITS_DIR = SOVITS_ROOT / "GPT_SoVITS"
 ERES2NET_DIR = GPT_SOVITS_DIR / "eres2net"
-VOICE_CACHE_DIR = PROJECT_ROOT / "outputs" / ".cache" / "voice"
+VOICE_CACHE_DIR = OUTPUTS_ROOT / ".cache" / "voice"
 TTS_RETRY_SEEDS = (42, 2026, 1234)
+RUNTIME_LIBRARY = Path(sys.executable).resolve().parents[1] / "Library" / "bin"
+_DLL_DIRECTORY = None
+
+if os.name == "nt" and RUNTIME_LIBRARY.is_dir():
+    _DLL_DIRECTORY = os.add_dll_directory(str(RUNTIME_LIBRARY))
+    os.environ["PATH"] = f"{RUNTIME_LIBRARY}{os.pathsep}{os.environ.get('PATH', '')}"
 
 # GPT-SoVITS still uses top-level imports in several internal modules.
 for import_path in (SOVITS_ROOT, GPT_SOVITS_DIR, ERES2NET_DIR):
@@ -276,6 +283,8 @@ def generate_voice(
     voice_profile: str = "default",
     speed: float = 1.0,
     api_url: Optional[str] = None,
+    reference_audio_path: Optional[str] = None,
+    reference_text: Optional[str] = None,
 ) -> Path:
     del api_url
     clean_text = _normalize_tts_text(text)
@@ -283,7 +292,7 @@ def generate_voice(
         raise ValueError("Speech text cannot be empty")
 
     configured_profile = load_configured_voice_profile(voice_profile)
-    if configured_profile.get("provider") == "cosyvoice":
+    if not reference_audio_path and configured_profile.get("provider") == "cosyvoice":
         return cosyvoice.generate_cosyvoice(
             clean_text,
             output_path,
@@ -293,7 +302,20 @@ def generate_voice(
 
     output = Path(output_path).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-    profile = load_voice_profile(voice_profile)
+    if reference_audio_path:
+        custom_reference = Path(reference_audio_path).resolve()
+        if not custom_reference.is_file():
+            raise FileNotFoundError(f"Reference audio does not exist: {custom_reference}")
+        prompt_text = str(reference_text or "").strip()
+        if not prompt_text:
+            raise ValueError("Custom reference audio requires its transcript")
+        profile = {
+            "reference_audio": custom_reference,
+            "reference_text": prompt_text,
+            "language": "zh",
+        }
+    else:
+        profile = load_voice_profile(voice_profile)
     reference_audio = _prepare_reference_audio(profile["reference_audio"])
     tts = _get_tts()
 

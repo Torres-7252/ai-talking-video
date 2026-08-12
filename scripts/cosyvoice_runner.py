@@ -49,10 +49,15 @@ def main() -> int:
     parser.add_argument("--speed", type=float, default=1.0)
     args = parser.parse_args()
 
+    print("[cosyvoice] CUDA available:", torch.cuda.is_available(), flush=True)
+    print("[cosyvoice] Loading model...", flush=True)
     model = AutoModel(
         model_dir=str(args.model_dir.resolve()),
-        fp16=torch.cuda.is_available(),
+        # FP16 inference can emit an all-NaN waveform on this Windows CUDA stack.
+        # The 300M model still fits comfortably on the local 8GB GPU in FP32.
+        fp16=False,
     )
+    print("[cosyvoice] Model loaded.", flush=True)
     if args.speaker not in model.list_available_spks():
         raise RuntimeError(
             f"CosyVoice speaker {args.speaker!r} is unavailable; "
@@ -61,6 +66,7 @@ def main() -> int:
     chunks = []
     minimum_duration = _minimum_generated_duration(args.text, args.speed)
     for seed in RETRY_SEEDS:
+        print(f"[cosyvoice] Starting inference (seed={seed})...", flush=True)
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
@@ -81,7 +87,14 @@ def main() -> int:
                 speed=args.speed,
                 text_frontend=False,
             )
-        chunks = [item["tts_speech"].cpu() for item in generated]
+        chunks = [item["tts_speech"].float().cpu() for item in generated]
+        if chunks and not all(torch.isfinite(chunk).all().item() for chunk in chunks):
+            print(
+                f"[cosyvoice] Non-finite audio from seed={seed}; retrying.",
+                flush=True,
+            )
+            chunks = []
+            continue
         generated_duration = (
             sum(chunk.shape[1] for chunk in chunks) / model.sample_rate
             if chunks
@@ -89,20 +102,22 @@ def main() -> int:
         )
         print(
             f"CosyVoice attempt seed={seed}: {generated_duration:.2f}s "
-            f"(minimum {minimum_duration:.2f}s)"
+            f"(minimum {minimum_duration:.2f}s)",
+            flush=True,
         )
         if generated_duration >= minimum_duration:
             break
         chunks = []
     if not chunks:
         raise RuntimeError(
-            "CosyVoice returned no complete audio after "
+            "CosyVoice returned no finite complete audio after "
             f"{len(RETRY_SEEDS)} attempts (minimum {minimum_duration:.2f}s)"
         )
     audio = torch.cat(chunks, dim=1)
     args.output.parent.mkdir(parents=True, exist_ok=True)
+    print("[cosyvoice] Saving audio...", flush=True)
     torchaudio.save(str(args.output.resolve()), audio, model.sample_rate)
-    print(f"CosyVoice generated {audio.shape[1] / model.sample_rate:.2f}s")
+    print(f"CosyVoice generated {audio.shape[1] / model.sample_rate:.2f}s", flush=True)
     return 0
 
 

@@ -93,11 +93,16 @@ def main() -> int:
     from app.backend.providers.lipsync import missing_musetalk_files
     from app.backend.providers.motion import missing_liveportrait_files
     from app.backend.providers.media_utils import validate_audio
-    from app.backend.providers.voice import build_tts_config
+    from app.backend.providers.voice import _import_tts_api, build_tts_config
 
     tts_paths = [Path(value) for key, value in build_tts_config()["custom"].items() if key.endswith("_path")]
     missing_tts = [path for path in tts_paths if not path.exists()]
     checks.append(("GPT-SoVITS v3 weights", not missing_tts, f"missing {len(missing_tts)} file(s)"))
+    try:
+        _import_tts_api()
+        checks.append(("GPT-SoVITS runtime imports", True, "text and model modules ready"))
+    except Exception as exc:
+        checks.append(("GPT-SoVITS runtime imports", False, str(exc)))
 
     missing_musetalk = missing_musetalk_files()
     checks.append(("MuseTalk 1.5 weights", not missing_musetalk, f"missing {len(missing_musetalk)} file(s)"))

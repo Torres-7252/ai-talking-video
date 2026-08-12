@@ -48,6 +48,12 @@ node_modules/
 
 # Local design previews
 .superpowers/
+hyperframes/
+scratch-*.png
+
+# User-uploaded media library
+materials/
+avatar/avatar-3d-anime.png
 
 # Python
 *.egg-info/

@@ -18,6 +18,10 @@ import voice
 
 
 class VoiceProviderTests(unittest.TestCase):
+    def test_voice_provider_configures_runtime_dll_directory(self):
+        self.assertIn("RUNTIME_LIBRARY", voice.__dict__)
+        self.assertIn("add_dll_directory", (PROJECT_ROOT / "app" / "backend" / "providers" / "voice" / "__init__.py").read_text(encoding="utf-8"))
+
     def test_provider_can_be_imported_through_project_package(self):
         code = (
             "import sys; "
@@ -97,7 +101,7 @@ class VoiceProviderTests(unittest.TestCase):
         self.assertEqual(profile["language"], "zh")
         self.assertEqual(
             profile["reference_text"],
-            "大家好，我是AI足球教练。今天我们来聊一个很多球友都关心的问题。",
+            "大家好，我是AI足球教练。今天我们来聊一个很多球友都关心的问题，为什么你的第一脚触球总是停不好？其实关键只有三点。",
         )
         self.assertEqual(profile["reference_audio"], PROJECT_ROOT / "voice" / "references" / "default.wav")
 

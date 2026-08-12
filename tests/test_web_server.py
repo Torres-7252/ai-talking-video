@@ -1,7 +1,6 @@
 """Tests for web project path confinement."""
 
 import asyncio
-import inspect
 import json
 import tempfile
 import unittest
@@ -16,6 +15,52 @@ from scripts import web_server
 
 
 class WebPathTests(unittest.TestCase):
+    def test_completed_task_does_not_hide_exported_project(self):
+        web_server.tasks.clear()
+        web_server.tasks["task-1"] = {
+            "id": "task-1",
+            "project_name": "completed-project",
+            "title": "已完成项目",
+            "status": "completed",
+            "steps": [],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir)
+            project_dir = output_root / ".work" / "completed-project"
+            project_dir.mkdir(parents=True)
+            final_file = project_dir / "final.mp4"
+            final_file.write_bytes(b"video")
+            (project_dir / "metadata.json").write_text(
+                json.dumps({"title": "已完成项目", "final_path": str(final_file)}),
+                encoding="utf-8",
+            )
+            with patch.object(web_server, "OUTPUTS_ROOT", output_root):
+                projects = web_server.get_projects()
+
+        self.assertTrue(projects[0]["has_video"])
+
+    def test_projects_includes_active_task_before_metadata_exists(self):
+        web_server.tasks.clear()
+        web_server.tasks["task-1"] = {
+            "id": "task-1",
+            "project_name": "active-project",
+            "title": "正在生成的长视频",
+            "status": "running",
+            "steps": [{"name": "声音生成", "status": "running"}],
+            "segment_count": 5,
+            "current_segment": 2,
+            "completed_segments": 1,
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir)
+            (output_root / ".work" / "active-project").mkdir(parents=True)
+            with patch.object(web_server, "OUTPUTS_ROOT", output_root):
+                projects = web_server.get_projects()
+
+        self.assertEqual(projects[0]["name"], "active-project")
+        self.assertEqual(projects[0]["status"], "running")
+        self.assertEqual(projects[0]["current_segment"], 2)
+
     def test_project_file_rejects_parent_escape(self):
         with self.assertRaises(ValueError):
             web_server.resolve_project_file("project", "../../.env")
@@ -25,9 +70,28 @@ class WebPathTests(unittest.TestCase):
             web_server.resolve_project_file("..", "final.mp4")
 
     def test_project_file_stays_under_outputs(self):
-        path = web_server.resolve_project_file("project", "final.mp4")
-        outputs = (web_server.PROJECT_ROOT / "outputs").resolve()
-        self.assertTrue(path.is_relative_to(outputs))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            outputs = Path(temp_dir).resolve()
+            with patch.object(web_server, "OUTPUTS_ROOT", outputs):
+                path = web_server.resolve_project_file("project", "final.mp4")
+
+        self.assertTrue(path.is_relative_to(outputs / ".work"))
+
+    def test_default_output_directory_is_requested_drive(self):
+        self.assertEqual(web_server.OUTPUTS_ROOT, Path(r"E:\ai口播输出").resolve())
+
+    def test_open_outputs_uses_configured_directory(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            outputs = Path(temp_dir) / "exports"
+            with (
+                patch.object(web_server, "OUTPUTS_ROOT", outputs),
+                patch.object(web_server.subprocess, "Popen") as popen,
+                patch.object(web_server.sys, "platform", "win32"),
+            ):
+                response = asyncio.run(web_server.api_open_outputs())
+
+        self.assertEqual(response.status_code, 200)
+        popen.assert_called_once_with(["explorer.exe", str(outputs)])
 
 
 class WebAssetUploadTests(unittest.TestCase):
@@ -56,7 +120,7 @@ class WebAssetUploadTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             self.assertEqual(target.read_bytes(), original)
 
-    def test_voice_upload_aligns_audio_to_reference_text_before_replacing(self):
+    def test_voice_upload_does_not_require_asr_alignment_before_replacing(self):
         observed = {}
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -65,11 +129,6 @@ class WebAssetUploadTests(unittest.TestCase):
             def convert_audio(command, **kwargs):
                 Path(command[-1]).write_bytes(b"converted audio")
                 return SimpleNamespace(returncode=0, stderr=b"")
-
-            def align_audio(path, reference_text):
-                observed["text"] = reference_text
-                path.write_bytes(b"aligned audio")
-                return path
 
             upload = UploadFile(filename="voice.mp3", file=BytesIO(b"x" * 2048))
             with (
@@ -81,7 +140,6 @@ class WebAssetUploadTests(unittest.TestCase):
                 ),
                 patch(
                     "app.backend.providers.voice.align_reference_audio",
-                    side_effect=align_audio,
                     create=True,
                 ) as align_reference,
             ):
@@ -95,9 +153,8 @@ class WebAssetUploadTests(unittest.TestCase):
             saved_audio = target.read_bytes()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(observed["text"], "the exact spoken reference")
-        self.assertEqual(align_reference.call_count, 1)
-        self.assertEqual(saved_audio, b"aligned audio")
+        align_reference.assert_not_called()
+        self.assertEqual(saved_audio, b"converted audio")
 
 
 class WebProjectDeleteTests(unittest.TestCase):
@@ -126,17 +183,11 @@ class WebProjectDeleteTests(unittest.TestCase):
         self.assertTrue(project_still_exists)
 
 
-class WebMotionTests(unittest.TestCase):
+class WebGenerationTests(unittest.TestCase):
     def setUp(self):
         web_server.tasks.clear()
 
-    def test_generate_request_preserves_natural_motion_options(self):
-        parameters = inspect.signature(web_server.api_generate).parameters
-        self.assertIn("avatar_engine", parameters)
-        self.assertIn("motion_mode", parameters)
-        self.assertIn("motion_style", parameters)
-        self.assertIn("motion_intensity", parameters)
-        self.assertIn("caption_style", parameters)
+    def test_generate_request_uses_ditto_only_pipeline(self):
         with patch.object(web_server.threading, "Thread"):
             response = asyncio.run(
                 web_server.api_generate(
@@ -146,24 +197,69 @@ class WebMotionTests(unittest.TestCase):
                     speed=1.0,
                     template="talking_head",
                     resume=False,
-                    avatar_engine="classic",
-                    motion_mode="natural",
-                    motion_style="steady",
-                    motion_intensity=0.35,
                     caption_style="pop",
-                    driver_profile="subtle_presenter",
                 )
             )
 
         self.assertEqual(response.status_code, 200)
         payload = json.loads(response.body)
         task = web_server.tasks[payload["task_id"]]
-        self.assertEqual(task["motion_mode"], "natural")
-        self.assertEqual(task["avatar_engine"], "classic")
-        self.assertEqual(task["motion_style"], "steady")
-        self.assertEqual(task["motion_intensity"], 0.35)
+        self.assertEqual(task["avatar_engine"], "ditto")
         self.assertEqual(task["caption_style"], "pop")
-        self.assertIn("LivePortrait 自然动作", [step["name"] for step in task["steps"]])
+        self.assertEqual(
+            [step["name"] for step in task["steps"]],
+            ["声音生成", "Ditto 真实数字人", "字幕生成", "自适应比例合成", "最终导出"],
+        )
+
+    def test_generate_request_rejects_an_overlong_ditto_script(self):
+        with patch.object(web_server.threading, "Thread"):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="long script", script="测" * 161, avatar_engine="ditto"
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_generate_request_splits_long_ditto_script_into_sentence_safe_segments(self):
+        first = "第一段" + "内容" * 65 + "。"
+        second = "第二段" + "内容" * 65 + "。"
+        third = "第三段" + "内容" * 65 + "。"
+        script = first + second + third
+        with patch.object(web_server.threading, "Thread"):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="long script", script=script, speed=1.0, avatar_engine="ditto"
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        task = web_server.tasks[json.loads(response.body)["task_id"]]
+        self.assertEqual(task["segment_count"], 3)
+        self.assertEqual(task["segments"], [first, second, third])
+
+    def test_generate_request_accepts_selected_material_ids(self):
+        avatar = {"id": "avatar123", "name": "Host", "file_path": Path("C:/tmp/host.jpg")}
+        voice = {"id": "voice123", "name": "Narrator", "file_path": Path("C:/tmp/voice.wav"), "reference_text": "测试音频"}
+        with (
+            patch.object(web_server.threading, "Thread"),
+            patch.object(web_server, "get_asset", side_effect=[avatar, voice]),
+        ):
+            response = asyncio.run(
+                web_server.api_generate(
+                    title="material test",
+                    script="test script",
+                    voice="default",
+                    caption_style="clean",
+                    avatar_asset_id="avatar123",
+                    voice_asset_id="voice123",
+                )
+            )
+
+        self.assertEqual(response.status_code, 200)
+        task = web_server.tasks[json.loads(response.body)["task_id"]]
+        self.assertEqual(task["avatar_asset_id"], "avatar123")
+        self.assertEqual(task["voice_asset_id"], "voice123")
 
     def test_generate_request_preserves_energetic_male_voice(self):
         with patch.object(web_server.threading, "Thread"):
@@ -172,12 +268,7 @@ class WebMotionTests(unittest.TestCase):
                     title="voice test",
                     script="test script",
                     voice="energetic_male",
-                    avatar_engine="ditto",
-                    motion_mode="natural",
-                    motion_style="steady",
-                    motion_intensity=0.35,
                     caption_style="clean",
-                    driver_profile="subtle_presenter",
                 )
             )
 
@@ -192,12 +283,7 @@ class WebMotionTests(unittest.TestCase):
                     title="voice test",
                     script="test script",
                     voice="unknown",
-                    avatar_engine="ditto",
-                    motion_mode="natural",
-                    motion_style="steady",
-                    motion_intensity=0.35,
                     caption_style="clean",
-                    driver_profile="subtle_presenter",
                 )
             )
 
@@ -222,39 +308,17 @@ class WebMotionTests(unittest.TestCase):
         project_name = json.loads(response.body)["project_name"]
         self.assertTrue(project_name.isascii())
 
-    def test_generate_request_rejects_invalid_motion_options(self):
-        parameters = inspect.signature(web_server.api_generate).parameters
-        self.assertIn("motion_mode", parameters)
+    def test_generate_request_rejects_removed_classic_engine(self):
         with patch.object(web_server.threading, "Thread"):
-            bad_mode = asyncio.run(
+            response = asyncio.run(
                 web_server.api_generate(
-                    title="motion test",
+                    title="classic test",
                     script="test script",
-                    voice="default",
-                    speed=1.0,
-                    template="talking_head",
-                    resume=False,
-                    motion_mode="random",
-                    motion_style="steady",
-                    motion_intensity=0.35,
-                )
-            )
-            bad_intensity = asyncio.run(
-                web_server.api_generate(
-                    title="motion test",
-                    script="test script",
-                    voice="default",
-                    speed=1.0,
-                    template="talking_head",
-                    resume=False,
-                    motion_mode="natural",
-                    motion_style="steady",
-                    motion_intensity=1.5,
+                    avatar_engine="classic",
                 )
             )
 
-        self.assertEqual(bad_mode.status_code, 400)
-        self.assertEqual(bad_intensity.status_code, 400)
+        self.assertEqual(response.status_code, 400)
 
     def test_generate_request_rejects_invalid_caption_style(self):
         with patch.object(web_server.threading, "Thread"):
@@ -268,43 +332,7 @@ class WebMotionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    def test_generate_request_accepts_gesture_driver_profile(self):
-        with patch.object(web_server.threading, "Thread"):
-            response = asyncio.run(
-                web_server.api_generate(
-                    title="gesture test",
-                    script="test script",
-                    avatar_engine="classic",
-                    motion_mode="gesture",
-                    motion_style="steady",
-                    motion_intensity=0.25,
-                    caption_style="clean",
-                    driver_profile="subtle_presenter",
-                )
-            )
-
-        self.assertEqual(response.status_code, 200)
-        payload = json.loads(response.body)
-        task = web_server.tasks[payload["task_id"]]
-        self.assertEqual(task["driver_profile"], "subtle_presenter")
-        self.assertIn("MimicMotion 手势动作", [step["name"] for step in task["steps"]])
-
-    def test_generate_request_rejects_unknown_driver_profile(self):
-        with patch.object(web_server.threading, "Thread"):
-            response = asyncio.run(
-                web_server.api_generate(
-                    title="gesture test",
-                    script="test script",
-                    motion_mode="gesture",
-                    driver_profile="unknown",
-                )
-            )
-
-        self.assertEqual(response.status_code, 400)
-
     def test_generate_request_defaults_to_ditto_and_rejects_unknown_engine(self):
-        parameters = inspect.signature(web_server.api_generate).parameters
-        self.assertEqual(parameters["avatar_engine"].default.default, "ditto")
         with patch.object(web_server.threading, "Thread"):
             response = asyncio.run(
                 web_server.api_generate(

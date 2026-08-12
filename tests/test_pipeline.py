@@ -7,10 +7,36 @@ from pathlib import Path
 from unittest.mock import patch
 
 from scripts import pipeline as pipeline_module
-from scripts.pipeline import Pipeline, artifact_is_valid, load_resume_metadata
+from scripts.pipeline import Pipeline, artifact_is_valid, load_resume_metadata, resolve_final_output_path
 
 
 class PipelineResumeTests(unittest.TestCase):
+    def test_final_video_is_written_to_the_public_output_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_root = Path(temp_dir) / "exports"
+            final_path = resolve_final_output_path("Demo Title", output_root)
+
+        self.assertEqual(final_path, output_root / "Demo Title.mp4")
+
+    def test_final_mp4_filename_uses_sanitized_video_title(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            project = Path(temp_dir) / "title-case"
+            with patch("scripts.pipeline._resolve_project_dir", return_value=project):
+                pipeline = Pipeline(
+                    "title-case",
+                    '绿茵进化：10位名帅/战术解析?',
+                    "test script",
+                )
+
+        self.assertEqual(
+            pipeline.final_file.name,
+            "绿茵进化：10位名帅_战术解析_.mp4",
+        )
+        self.assertEqual(
+            pipeline.metadata["final_filename"],
+            pipeline.final_file.name,
+        )
+
     def test_resume_metadata_restores_script_without_cli_copy(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             outputs = Path(temp_dir)
@@ -29,7 +55,9 @@ class PipelineResumeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "audio.wav"
             output.touch()
-            pipeline = Pipeline("case", "title", "text", resume=True)
+            project = Path(temp_dir) / "case"
+            with patch("scripts.pipeline._resolve_project_dir", return_value=project):
+                pipeline = Pipeline("case", "title", "text", resume=True)
 
             self.assertFalse(artifact_is_valid("voice", output))
             self.assertTrue(pipeline.should_run(output, "voice"))
@@ -40,10 +68,27 @@ class PipelineResumeTests(unittest.TestCase):
             output.write_text(
                 '[{"text":"测试","start":0.0,"end":1.0}]', encoding="utf-8"
             )
-            pipeline = Pipeline("case", "title", "text", resume=True)
-
+            project = Path(temp_dir) / "case"
+            with patch("scripts.pipeline._resolve_project_dir", return_value=project):
+                pipeline = Pipeline("case", "title", "text", resume=True)
             self.assertTrue(artifact_is_valid("subtitle", output))
             self.assertFalse(pipeline.should_run(output, "subtitle"))
+
+    def test_render_artifact_accepts_the_selected_portrait_canvas(self):
+        video_info = {
+            "streams": [
+                {"codec_type": "video", "width": 1080, "height": 1920},
+                {"codec_type": "audio"},
+            ]
+        }
+        with patch("scripts.pipeline.validate_video", return_value=video_info) as validate:
+            self.assertTrue(
+                artifact_is_valid(
+                    "render", Path("portrait.mp4"), expected_size=(1080, 1920)
+                )
+            )
+
+        validate.assert_called_once_with(Path("portrait.mp4"), expected_size=(1080, 1920))
 
     def test_failure_reporting_does_not_mask_error_when_project_was_removed(self):
         with tempfile.TemporaryDirectory() as temp_dir:

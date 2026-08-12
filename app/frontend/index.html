@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI数字人口播视频生成器</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
@@ -114,6 +115,19 @@
   .upload-zone .status { font-size:13px;font-weight:500;margin-top:4px; }
   .upload-zone .status.ok { color:var(--success); }
   .upload-zone .status.no { color:var(--danger); }
+  .material-upload-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px; }
+  .material-list { display:grid;gap:9px;margin-top:14px; }
+  .material-item { display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-input); }
+  .material-thumb { width:42px;height:42px;border-radius:5px;object-fit:cover;background:var(--bg-card);flex:0 0 auto; }
+  .material-icon { width:42px;height:42px;border-radius:5px;display:grid;place-items:center;background:rgba(52,199,89,.12);color:var(--success);font-size:21px;flex:0 0 auto; }
+  .material-info { min-width:0;flex:1; }
+  .material-name { font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+  .material-meta { margin-top:2px;font-size:11px;color:var(--text-muted); }
+  .material-rename { width:30px;height:30px;border:0;border-radius:5px;background:transparent;color:var(--text-muted);cursor:pointer; }
+  .material-rename:hover { color:var(--text);background:var(--bg-card); }
+  .material-delete { width:30px;height:30px;border:0;border-radius:5px;background:transparent;color:var(--text-muted);cursor:pointer; }
+  .material-delete:hover { color:var(--danger);background:rgba(238,93,114,.12); }
+  @media(max-width:720px) { .material-upload-grid{grid-template-columns:1fr;} }
 
   /* Pipeline */
   .pipeline { display:flex;flex-direction:column;gap:6px; }
@@ -241,7 +255,9 @@
     }
     .tab-nav button { min-width:0;padding:7px 4px;font-size:12px; }
     #envBadge { justify-self:end;min-width:0; }
-    .env-badge { max-width:120px;padding:5px 8px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+    .env-badge { max-width:120px;padding:5px 8px;font-size:11px;white-space:nowrap; }
+    .env-badge .env-full { display:none; }
+    .env-badge .env-short { display:inline; }
     .spacer { display:none; }
     .topbar > .btn-ghost { width:34px;height:34px;padding:0;font-size:0 !important; }
     .topbar > .btn-ghost::before { content:'\1F4C1';font-size:15px; }
@@ -249,71 +265,221 @@
     .card { padding:18px;margin-bottom:16px; }
     .field-row,.motion-controls { grid-template-columns:1fr; }
   }
+
+  /* Production console layout */
+  :root {
+    --bg-primary:#090b10;
+    --bg-card:#10131a;
+    --bg-input:#171b24;
+    --border:#272c37;
+    --border-focus:#6577e8;
+    --text:#eef0f5;
+    --text-muted:#8b92a2;
+    --accent:#6577e8;
+    --accent-hover:#7485ee;
+    --accent-glow:rgba(101,119,232,.18);
+    --success:#35c86f;
+    --warning:#e7a43a;
+    --danger:#ee5d72;
+    --radius:8px;
+    --radius-sm:6px;
+  }
+  body { background:var(--bg-primary);font-size:14px; }
+  body::before { display:none; }
+  .topbar {
+    min-height:60px;padding:0 24px;background:rgba(9,11,16,.96);
+    backdrop-filter:blur(16px);gap:18px;
+  }
+  .logo { font-size:17px;gap:10px; }
+  .logo-icon { width:34px;height:34px;border-radius:7px;background:var(--accent);font-size:18px; }
+  .logo span { background:none;-webkit-text-fill-color:var(--text); }
+  .tab-nav { margin-left:4px; }
+  .tab-nav button { border-radius:6px;padding:8px 12px;color:#969dac; }
+  .tab-nav button i,.topbar .btn i { font-size:15px; }
+  .tab-nav button.active { background:#171b24;color:var(--text); }
+  .env-badge { border-radius:999px;padding:6px 12px;font-size:12px; }
+
+  .layout {
+    max-width:none;margin:0;padding:14px 16px 18px;gap:12px;
+    grid-template-columns:340px minmax(520px,1fr) 286px;
+    align-items:start;
+  }
+  .surface,.card {
+    background:var(--bg-card);border:1px solid var(--border);
+    border-radius:var(--radius);box-shadow:none;
+  }
+  .card { padding:18px;margin-bottom:12px; }
+  .config-card { min-height:calc(100vh - 92px);margin:0;padding:18px; }
+  .card-header { margin-bottom:16px;gap:10px; }
+  .card-header .icon { width:28px;height:28px;border-radius:6px;background:#1b2130 !important;color:#aeb9ff; }
+  .card-header .icon i { font-size:16px; }
+  .card-header h2 { font-size:14px; }
+  .card-header .badge-count { border-radius:999px;background:#1a1e28; }
+  .section-kicker { font-size:11px;color:var(--text-muted);margin:0 0 14px; }
+  .field { margin-bottom:13px; }
+  .field label { text-transform:none;letter-spacing:0;font-size:11px;margin-bottom:5px;color:#9097a6; }
+  .field input,.field textarea,.field select {
+    min-height:40px;padding:9px 11px;border-radius:6px;background:#171b24;
+    font-size:13px;border-color:#292f3a;
+  }
+  .field textarea { height:116px;min-height:96px; }
+  .field input:focus,.field textarea:focus,.field select:focus { box-shadow:0 0 0 3px var(--accent-glow); }
+  .field-row { gap:10px; }
+  .advanced-settings { border-top:1px solid var(--border);margin:2px 0 14px;padding-top:12px; }
+  .advanced-settings summary { cursor:pointer;color:#cbd0dc;font-size:12px;font-weight:600;list-style:none;display:flex;align-items:center;justify-content:space-between;margin-bottom:12px; }
+  .advanced-settings summary::after { content:'\ea4e';font-family:'remixicon';font-size:16px;color:var(--text-muted); }
+  .advanced-settings:not([open]) summary { margin-bottom:0; }
+  .advanced-settings[open] summary::after { content:'\ea78'; }
+  .motion-controls { gap:10px;margin-bottom:13px; }
+  .motion-range { min-height:40px; }
+  .btn { border-radius:6px; }
+  .btn-primary { background:var(--accent);box-shadow:none; }
+  .btn-primary:hover { background:var(--accent-hover);box-shadow:none;transform:none; }
+  .btn-ghost { background:#131720;border-color:var(--border); }
+  .generate-meta { display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:#707786;font-size:10px; }
+
+  .preview-column { min-width:0; }
+  .preview-card { padding:0;margin:0;overflow:hidden; }
+  .preview-card .card-header { min-height:54px;margin:0;padding:0 16px;border-bottom:1px solid var(--border); }
+  .preview-card #previewContent { padding:14px; }
+  .preview-area { border-radius:6px;background:#050608;border:1px solid #20242c; }
+  .preview-empty .icon { font-size:34px;opacity:.55;color:#697181; }
+  .preview-empty p { font-size:13px; }
+
+  #taskCard { padding:0;margin:0 0 12px;overflow:hidden; }
+  #taskCard .card-header { min-height:52px;margin:0;padding:0 16px;border-bottom:1px solid var(--border); }
+  #taskCard .pipeline { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0;padding:16px; }
+  #taskCard .pipe-step { position:relative;display:block;text-align:center;padding:0 4px;background:transparent;border:0;min-width:0; }
+  #taskCard .pipe-step::after { content:'';position:absolute;left:calc(50% + 16px);right:calc(-50% + 16px);top:13px;height:1px;background:#343945; }
+  #taskCard .pipe-step:last-child::after { display:none; }
+  #taskCard .pipe-indicator { width:26px;height:26px;margin:0 auto 7px;font-size:11px;position:relative;z-index:1;background:#202530; }
+  #taskCard .step-name { font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+  #taskCard .step-status { font-size:10px;margin-top:2px; }
+  #taskCard .log-wrap { padding:0 16px 14px; }
+  .log-console { max-height:112px;padding:10px;background:#090b10;border:1px solid #20242c; }
+
+  .project-rail { min-width:0; }
+  .projects-card { margin:0;padding:0;min-height:calc(100vh - 92px);overflow:hidden; }
+  .projects-card .card-header { min-height:54px;margin:0;padding:0 14px;border-bottom:1px solid var(--border); }
+  .project-grid { display:block;max-height:calc(100vh - 158px);overflow:auto; }
+  .proj-card { position:relative;background:transparent;border:0;border-bottom:1px solid #222733;border-radius:0;padding:13px 14px; }
+  .proj-card:hover { background:#151923;border-color:#222733;transform:none; }
+  .proj-card.active { background:#1a1f2b;border-left:3px solid var(--accent);box-shadow:none;padding-left:11px; }
+  .proj-card .title { font-size:13px;margin-bottom:5px;padding-right:18px; }
+  .proj-card .meta { gap:7px;font-size:10px; }
+  .proj-card .status-badge { border-radius:4px;margin-top:7px;font-size:10px; }
+  .btn-del { position:absolute;right:8px;top:10px;width:24px;height:24px;padding:0; }
+  .empty-state { padding:48px 16px; }
+  .empty-state .icon { font-size:30px; }
+
+  #panelAssets,#panelGuide { grid-column:1 / -1;max-width:1080px;width:100%;margin:0 auto; }
+  .tips-box { border-radius:6px; }
+
+  @media (max-width:1180px) {
+    .layout { grid-template-columns:320px minmax(0,1fr); }
+    .project-rail { grid-column:1 / -1; }
+    .projects-card { min-height:0; }
+    .project-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));max-height:360px; }
+    .proj-card:nth-child(odd) { border-right:1px solid #222733; }
+  }
+  @media (max-width:820px) {
+    .topbar { padding:8px 14px;min-height:unset; }
+    .layout { grid-template-columns:1fr;padding:12px; }
+    .config-card { min-height:0; }
+    .preview-column,.project-rail { grid-column:1; }
+    #taskCard .pipeline { overflow-x:auto;grid-template-columns:repeat(5,110px); }
+  }
+  @media (max-width:700px) {
+    .topbar { grid-template-columns:minmax(0,1fr) auto auto;padding:10px 12px; }
+    .tab-nav { display:grid; }
+    .topbar > .btn-ghost::before { content:'\ec5a';font-family:'remixicon'; }
+    .layout { padding:10px;gap:10px; }
+    .config-card { padding:15px; }
+    .preview-card #previewContent { padding:8px; }
+    .project-grid { grid-template-columns:1fr; }
+    .proj-card:nth-child(odd) { border-right:0; }
+  }
+  @media (min-width:701px) {
+    .env-badge .env-short { display:none; }
+  }
 </style>
 </head>
 <body>
 
 <div class="topbar">
-  <div class="logo"><div class="logo-icon">&#9654;</div><span>AI口播工厂</span></div>
+  <div class="logo"><div class="logo-icon"><i class="ri-play-fill" aria-hidden="true"></i></div><span>AI口播工厂</span></div>
   <div class="tab-nav">
-    <button class="active" onclick="switchTab('create')" id="tabCreate">&#9997; 生成视频</button>
-    <button onclick="switchTab('assets')" id="tabAssets">&#9881; 素材管理</button>
-    <button onclick="switchTab('guide')" id="tabGuide">&#128214; 使用指南</button>
+    <button class="active" onclick="switchTab('create')" id="tabCreate"><i class="ri-movie-ai-line" aria-hidden="true"></i> 生成视频</button>
+    <button onclick="switchTab('assets')" id="tabAssets"><i class="ri-folder-image-line" aria-hidden="true"></i> 素材管理</button>
+    <button onclick="switchTab('guide')" id="tabGuide"><i class="ri-book-open-line" aria-hidden="true"></i> 使用指南</button>
   </div>
   <div id="envBadge"></div>
   <div class="spacer"></div>
-  <button class="btn btn-ghost" onclick="openOutputs()" style="font-size:12px;padding:6px 12px;">&#128193; 输出目录</button>
+  <button class="btn btn-ghost" onclick="openOutputs()" style="font-size:12px;padding:6px 12px;"><i class="ri-folder-download-line" aria-hidden="true"></i> 输出目录</button>
 </div>
 
 <div class="layout">
   <!-- ============ TAB: CREATE ============ -->
   <div id="panelCreate">
-    <div class="card">
+    <div class="card config-card">
       <div class="card-header">
-        <div class="icon" style="background:rgba(91,110,245,0.12)">&#9997;</div>
-        <h2>创建新视频</h2>
+        <div class="icon"><i class="ri-file-edit-line" aria-hidden="true"></i></div>
+        <h2>内容配置</h2>
       </div>
+      <p class="section-kicker">填写口播内容并选择生成参数</p>
 
       <div id="missingAssetsWarn" class="tips-box" style="display:none;">
-        <strong>&#9888; 素材缺失</strong> — 请先在 <a href="#" onclick="switchTab('assets')">素材管理</a> 上传人物图片和参考音频
+        <strong><i class="ri-error-warning-line" aria-hidden="true"></i> 素材缺失</strong> — 请先在 <a href="#" onclick="switchTab('assets')">素材管理</a> 上传人物图片和参考音频
       </div>
 
       <div class="field"><label>视频标题 <span style="color:var(--danger)">*</span></label><input type="text" id="title" placeholder="e.g. 为什么你的第一脚触球总是停不好？" maxlength="80"></div>
-      <div class="field"><label>口播文案 <span style="color:var(--danger)">*</span></label><textarea id="script" placeholder="输入中文口播文案..." maxlength="2000"></textarea><div style="font-size:11px;color:var(--text-muted);margin-top:4px;text-align:right;"><span id="charCount">0</span>/2000</div></div>
+      <div class="field"><label>口播文案 <span style="color:var(--danger)">*</span></label><textarea id="script" placeholder="输入中文口播文案..."></textarea><div style="font-size:11px;color:var(--text-muted);margin-top:4px;display:flex;justify-content:space-between;"><span id="scriptEstimate">预计 0 秒，超过 30 秒将自动分段并合并</span><span><span id="charCount">0</span> 字</span></div></div>
       <div class="field-row">
-        <div class="field"><label>模板</label><select id="template"><option value="football_knowledge">&#9917; 足球知识</option><option value="football_training">&#127939; 足球训练</option><option value="product_promo">&#128176; 产品宣传</option><option value="talking_head">&#127908; 普通口播</option></select></div>
+        <div class="field"><label>模板</label><select id="template"><option value="football_knowledge">足球知识</option><option value="football_training">足球训练</option><option value="product_promo">产品宣传</option><option value="talking_head">普通口播</option></select></div>
         <div class="field"><label>语速</label><select id="speed"><option value="0.8">0.8x</option><option value="1.0" selected>1.0x</option><option value="1.2">1.2x</option><option value="1.5">1.5x</option></select></div>
       </div>
-      <div class="field"><label for="voice">音色</label><select id="voice"><option value="energetic_male" selected>活力男声</option><option value="default">我的声音</option></select></div>
-      <div class="field"><label for="avatarEngine">数字人引擎</label><select id="avatarEngine" onchange="updateMotionControls()"><option value="ditto" selected>Ditto 真实模式（推荐）</option><option value="classic">LivePortrait + MuseTalk 经典模式</option></select></div>
-      <div class="field"><label for="captionStyle">字幕动效</label><select id="captionStyle"><option value="clean" selected>清晰逐词高亮</option><option value="pop">弹跳强调</option><option value="bar">信息条</option></select></div>
-      <div class="motion-controls" id="motionControls">
-        <div class="field" style="margin-bottom:0;">
-          <label for="motionMode">身体动作</label>
-          <select id="motionMode" onchange="updateMotionControls()"><option value="natural" selected>自然微动</option><option value="gesture">手势动作</option><option value="off">关闭动作</option></select>
-        </div>
-        <div class="field" style="margin-bottom:0;">
-          <label for="motionIntensity">动作强度</label>
-          <div class="motion-range"><input type="range" id="motionIntensity" min="0" max="100" value="35" step="5" oninput="updateMotionControls()"><span class="motion-value" id="motionValue">35%</span></div>
-        </div>
+      <div class="field"><label for="voice">音色</label><select id="voice"></select></div>
+      <div class="field-row">
+        <div class="field"><label for="avatarAsset">人物图片</label><select id="avatarAsset"></select></div>
       </div>
-      <div class="field" id="driverProfileField" style="display:none;"><label for="driverProfile">动作素材</label><select id="driverProfile"><option value="subtle_presenter" selected>坐姿轻手势</option></select></div>
-      <button class="btn btn-primary" onclick="doGenerate()" id="genBtn">&#9889; 开始生成视频</button>
-    </div>
-
-    <div class="card" id="taskCard" style="display:none;">
-      <div class="card-header"><div class="icon" style="background:rgba(91,110,245,0.12)">&#9201;</div><h2 id="taskTitle">生成中...</h2><span class="badge-count" id="taskStatus">waiting</span></div>
-      <div class="pipeline" id="pipelineSteps"></div>
-      <div style="margin-top:12px;"><div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">日志</div><div class="log-console" id="logConsole"></div></div>
+      <div class="advanced-settings">
+        <div class="field"><label>数字人引擎</label><input type="text" value="Ditto 真实模式" readonly></div>
+        <div class="field"><label for="captionStyle">字幕动效</label><select id="captionStyle"><option value="clean" selected>清晰逐词高亮</option><option value="pop">弹跳强调</option><option value="bar">信息条</option></select></div>
+      </div>
+      <button class="btn btn-primary" onclick="doGenerate()" id="genBtn"><i class="ri-play-circle-line" aria-hidden="true"></i> 开始生成视频</button>
+      <div class="generate-meta"><span>预计耗时 2-4 分钟</span><span>支持断点续跑</span></div>
     </div>
   </div>
 
   <!-- ============ TAB: ASSETS ============ -->
   <div id="panelAssets" style="display:none;">
     <div class="card">
-      <div class="card-header"><div class="icon" style="background:rgba(255,159,10,0.12)">&#128100;</div><h2>我的 AI 形象（人物图片）</h2></div>
+      <div class="card-header"><div class="icon"><i class="ri-stack-line" aria-hidden="true"></i></div><h2>素材库</h2></div>
+      <p class="section-kicker">上传多张人物图片和多份参考音频；修改名称后可直接在制作视频时选择。</p>
+      <div class="material-upload-grid">
+        <div>
+          <div class="field"><label>人物素材名称</label><input type="text" id="libraryAvatarName" placeholder="例如：办公室讲解员"></div>
+          <div class="upload-zone" onclick="document.getElementById('libraryAvatarFile').click()">
+            <div class="icon"><i class="ri-image-add-line" aria-hidden="true"></i></div><div style="font-weight:500;">上传人物图片</div><div class="hint">JPG / PNG / WebP，最小 512px</div>
+          </div>
+          <input type="file" id="libraryAvatarFile" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="uploadLibraryAvatar(this.files[0])">
+          <div class="material-list" id="avatarMaterialList"></div>
+        </div>
+        <div>
+          <div class="field"><label>音频素材名称</label><input type="text" id="libraryVoiceName" placeholder="例如：活力男声样本"></div>
+          <div class="field"><label>参考音频原文</label><input type="text" id="libraryReferenceText" placeholder="填写录音中实际说出的内容"></div>
+          <div class="upload-zone" onclick="document.getElementById('libraryVoiceFile').click()">
+            <div class="icon"><i class="ri-mic-line" aria-hidden="true"></i></div><div style="font-weight:500;">上传参考音频</div><div class="hint">建议 3-10 秒清晰中文语音</div>
+          </div>
+          <input type="file" id="libraryVoiceFile" accept="audio/*" style="display:none" onchange="uploadLibraryVoice(this.files[0])">
+          <div class="material-list" id="voiceMaterialList"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="icon"><i class="ri-user-3-line" aria-hidden="true"></i></div><h2>我的 AI 形象（人物图片）</h2></div>
       <div id="avatarZone" class="upload-zone missing" onclick="document.getElementById('avatarFile').click()">
-        <div class="icon">&#128444;</div>
+        <div class="icon"><i class="ri-image-add-line" aria-hidden="true"></i></div>
         <div id="avatarName" style="font-weight:500;">点击上传人物图片</div>
         <div id="avatarStatus" class="status no">未上传</div>
         <div class="hint">.jpg / .png — 正面清晰、嘴部无遮挡、保留完整背景 — ≤50MB</div>
@@ -321,14 +487,14 @@
       <input type="file" id="avatarFile" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="uploadAvatar(this.files[0])">
 
       <div style="margin-top:16px;padding:12px;background:var(--bg-input);border-radius:var(--radius-sm);font-size:12px;color:var(--text-muted);line-height:1.7;">
-        MuseTalk 1.5 使用整张人物图片生成口型，输出保持 1920×1080 横屏构图。
+        Ditto 会根据人物图片自动匹配输出比例：竖图生成 9:16，横图生成 16:9，4:3 图片生成 4:3 视频。
       </div>
     </div>
 
     <div class="card">
-      <div class="card-header"><div class="icon" style="background:rgba(91,110,245,0.12)">&#127925;</div><h2>我的 AI 声音（参考音频）</h2></div>
+      <div class="card-header"><div class="icon"><i class="ri-mic-line" aria-hidden="true"></i></div><h2>我的 AI 声音（参考音频）</h2></div>
       <div id="voiceZone" class="upload-zone missing" onclick="document.getElementById('voiceFile').click()">
-        <div class="icon">&#127908;</div>
+        <div class="icon"><i class="ri-upload-cloud-2-line" aria-hidden="true"></i></div>
         <div id="voiceName" style="font-weight:500;">点击上传参考音频</div>
         <div id="voiceStatus" class="status no">未上传</div>
         <div class="hint">.wav / .mp3 — 5~10秒清晰中文语音用于克隆音色 — ≤50MB</div>
@@ -351,7 +517,7 @@
     </div>
 
     <div class="card">
-      <div class="card-header"><div class="icon" style="background:rgba(52,199,89,0.12)">&#9917;</div><h2>足球素材库</h2></div>
+      <div class="card-header"><div class="icon"><i class="ri-football-line" aria-hidden="true"></i></div><h2>足球素材库</h2></div>
       <div id="footballAssets">加载中...</div>
     </div>
   </div>
@@ -359,10 +525,10 @@
   <!-- ============ TAB: GUIDE ============ -->
   <div id="panelGuide" style="display:none;">
     <div class="card">
-      <div class="card-header"><div class="icon" style="background:rgba(91,110,245,0.12)">&#128214;</div><h2>快速上手</h2></div>
+      <div class="card-header"><div class="icon"><i class="ri-book-open-line" aria-hidden="true"></i></div><h2>快速上手</h2></div>
 
       <div class="guide-section">
-        <h3>&#9312; 准备素材</h3>
+        <h3>1. 准备素材</h3>
         <ol>
           <li>切换到 <strong>素材管理</strong> 标签页</li>
           <li>上传 <strong>人物图片</strong>（正面清晰、嘴部无遮挡、背景完整）</li>
@@ -371,7 +537,7 @@
       </div>
 
       <div class="guide-section">
-        <h3>&#9313; 生成视频</h3>
+        <h3>2. 生成视频</h3>
         <ol>
           <li>切换到 <strong>生成视频</strong> 标签页</li>
           <li>填写 <strong>视频标题</strong></li>
@@ -382,7 +548,7 @@
       </div>
 
       <div class="guide-section">
-        <h3>&#9314; 查看结果</h3>
+        <h3>3. 查看结果</h3>
         <p>生成完成后，右侧 <strong>历史项目</strong> 中会出现新项目，点击即可预览和下载视频。</p>
         <p>所有中间文件（音频、字幕、原始口型视频等）都可以单独下载。</p>
       </div>
@@ -390,10 +556,10 @@
 
     <!-- Script Templates -->
     <div class="card">
-      <div class="card-header"><div class="icon" style="background:rgba(52,199,89,0.12)">&#128221;</div><h2>口播文案模板</h2></div>
+      <div class="card-header"><div class="icon"><i class="ri-file-text-line" aria-hidden="true"></i></div><h2>口播文案模板</h2></div>
 
       <div class="guide-section">
-        <h3>&#9917; 足球知识模板</h3>
+        <h3>足球知识模板</h3>
         <div class="template-block" style="position:relative;">
           <button class="copy-btn" onclick="copyTemplate(this)">复制</button>
 为什么你的第一脚触球总是停不好？今天告诉你三个关键点。
@@ -409,7 +575,7 @@
       </div>
 
       <div class="guide-section">
-        <h3>&#127939; 足球训练模板</h3>
+        <h3>足球训练模板</h3>
         <div class="template-block" style="position:relative;">
           <button class="copy-btn" onclick="copyTemplate(this)">复制</button>
 今天的训练内容是——提高你的短传精度。
@@ -423,7 +589,7 @@
       </div>
 
       <div class="guide-section">
-        <h3>&#128176; 产品宣传模板</h3>
+        <h3>产品宣传模板</h3>
         <div class="template-block" style="position:relative;">
           <button class="copy-btn" onclick="copyTemplate(this)">复制</button>
 作为一名踢了十年球的爱好者，我试过不下二十款足球鞋。
@@ -439,10 +605,10 @@
 
     <!-- Video Requirements -->
     <div class="card">
-      <div class="card-header"><div class="icon" style="background:rgba(255,159,10,0.12)">&#9888;</div><h2>人物图片要求</h2></div>
+      <div class="card-header"><div class="icon"><i class="ri-camera-lens-line" aria-hidden="true"></i></div><h2>人物图片要求</h2></div>
 
       <div class="guide-section">
-        <h3>&#9989; 必须做到</h3>
+        <h3>必须做到</h3>
         <ul>
           <li>正面面对镜头，胸部以上入镜</li>
           <li>纯色背景（白色/灰色最佳），背景干净无杂物</li>
@@ -453,7 +619,7 @@
       </div>
 
       <div class="guide-section">
-        <h3>&#10060; 不要这样</h3>
+        <h3>不要这样</h3>
         <ul>
           <li>不要遮挡嘴部（口罩、手等）</li>
           <li>不要有大幅度的头部转动或身体晃动</li>
@@ -464,50 +630,44 @@
       </div>
 
       <div class="guide-section">
-        <h3>&#128247; 拍摄建议</h3>
+        <h3>拍摄建议</h3>
         <p>手机加三脚架/支架固定，放在面前约一臂距离。如果室内光线不足，可以开台灯补光到脸部。用手机默认相机录就行，不需要滤镜或美颜。</p>
       </div>
     </div>
   </div>
 
-  <!-- Right Column: History + Preview -->
-  <div>
-    <div class="card">
-      <div class="card-header"><div class="icon" style="background:rgba(52,199,89,0.12)">&#128196;</div><h2>历史项目</h2><span class="badge-count" id="projectCount">0</span></div>
-      <div class="project-grid" id="projectGrid"></div>
-      <div class="empty-state" id="projectEmpty"><div class="icon">&#127910;</div><p>暂无项目，在左侧创建第一个视频吧</p></div>
+  <main class="preview-column" id="workspaceMain">
+    <div class="card" id="taskCard" style="display:none;">
+      <div class="card-header"><div class="icon"><i class="ri-loader-4-line" aria-hidden="true"></i></div><h2 id="taskTitle">生成中...</h2><span class="badge-count" id="taskStatus">waiting</span></div>
+      <div class="pipeline" id="pipelineSteps"></div>
+      <div class="log-wrap"><div style="font-size:10px;color:var(--text-muted);margin-bottom:6px;">运行日志</div><div class="log-console" id="logConsole"></div></div>
     </div>
-
-    <div class="card">
-      <div class="card-header"><div class="icon" style="background:rgba(255,159,10,0.12)">&#9654;</div><h2>视频预览</h2><span id="previewLabel" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span></div>
+    <div class="card preview-card">
+      <div class="card-header"><div class="icon"><i class="ri-play-circle-line" aria-hidden="true"></i></div><h2>视频预览</h2><span id="previewLabel" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span></div>
       <div id="previewContent">
-        <div class="preview-area"><div class="preview-empty"><div class="icon">&#127916;</div><p>选择项目或生成新视频后预览</p></div></div>
+        <div class="preview-area"><div class="preview-empty"><div class="icon"><i class="ri-movie-2-line" aria-hidden="true"></i></div><p>选择项目或生成新视频后预览</p></div></div>
       </div>
     </div>
-  </div>
+  </main>
+
+  <aside class="project-rail" id="projectRail">
+    <div class="card projects-card">
+      <div class="card-header"><div class="icon"><i class="ri-history-line" aria-hidden="true"></i></div><h2>项目历史</h2><span class="badge-count" id="projectCount">0</span></div>
+      <div class="project-grid" id="projectGrid"></div>
+      <div class="empty-state" id="projectEmpty"><div class="icon"><i class="ri-film-line" aria-hidden="true"></i></div><p>暂无项目，在左侧创建第一个视频</p></div>
+    </div>
+  </aside>
 </div>
 
 <script>
-let ws = null, currentTask = null, activeProject = null;
-const STEP_ICONS = { '声音生成':'&#127925;', 'LivePortrait 自然动作':'&#128065;', 'Ditto 真实数字人':'&#129302;', 'MuseTalk 1.5口型':'&#129302;', '字幕生成':'&#128196;', '1080p横屏合成':'&#127917;', '最终导出':'&#9889;' };
+let ws = null, currentTask = null, taskPollTimer = null, activeProject = null, materialLibrary = {avatar:[], voice:[]};
+const STEP_ICONS = { '声音生成':'ri-volume-up-line', 'Ditto 真实数字人':'ri-user-star-line', '字幕生成':'ri-subtitle-line', '自适应比例合成':'ri-layout-2-line', '最终导出':'ri-export-line' };
 
 document.addEventListener('DOMContentLoaded', () => {
   connectWS(); loadProjects(); checkEnv(); loadAssets();
   document.getElementById('script').addEventListener('input', updateCharCount);
-  updateMotionControls();
+  document.getElementById('speed').addEventListener('change', updateCharCount);
 });
-
-function updateMotionControls() {
-  const classic = document.getElementById('avatarEngine').value === 'classic';
-  const mode = document.getElementById('motionMode');
-  const enabled = classic && mode.value !== 'off';
-  const slider = document.getElementById('motionIntensity');
-  mode.disabled = !classic;
-  slider.disabled = !enabled;
-  document.getElementById('motionControls').style.opacity = classic ? '1' : '0.45';
-  document.getElementById('driverProfileField').style.display = classic && mode.value === 'gesture' ? '' : 'none';
-  document.getElementById('motionValue').textContent = `${slider.value}%`;
-}
 
 function switchTab(tab) {
   document.getElementById('tabCreate').classList.toggle('active', tab==='create');
@@ -516,6 +676,8 @@ function switchTab(tab) {
   document.getElementById('panelCreate').style.display = tab==='create' ? '' : 'none';
   document.getElementById('panelAssets').style.display = tab==='assets' ? '' : 'none';
   document.getElementById('panelGuide').style.display = tab==='guide' ? '' : 'none';
+  document.getElementById('workspaceMain').style.display = tab==='create' ? '' : 'none';
+  document.getElementById('projectRail').style.display = tab==='create' ? '' : 'none';
   if (tab==='assets') loadAssets();
 }
 
@@ -524,18 +686,43 @@ function connectWS() {
   ws = new WebSocket(`${proto}://${location.host}/ws`);
   ws.onmessage = e => {
     const d = JSON.parse(e.data);
-    if (d.type==='task_update') renderTask(d.task);
-    if (d.type==='task_complete') { renderTask(d.task); loadProjects(); }
+    if (d.type==='task_update') { renderTask(d.task); loadProjects(); }
+    if (d.type==='task_complete') { renderTask(d.task); stopTaskPolling(); loadProjects(); }
   };
   ws.onclose = () => setTimeout(connectWS, 2000);
+}
+
+function stopTaskPolling() {
+  if (taskPollTimer) clearInterval(taskPollTimer);
+  taskPollTimer = null;
+}
+
+async function pollTaskStatus() {
+  if (!currentTask) return;
+  try {
+    const response = await fetch(`/api/tasks/${currentTask}`);
+    if (!response.ok) return;
+    const task = await response.json();
+    renderTask(task);
+    if (task.status === 'completed' || task.status === 'failed') {
+      stopTaskPolling();
+      loadProjects();
+    }
+  } catch (error) {}
+}
+
+function startTaskPolling() {
+  stopTaskPolling();
+  pollTaskStatus();
+  taskPollTimer = setInterval(pollTaskStatus, 2000);
 }
 
 async function checkEnv() {
   try {
     const r = await fetch('/api/env'); const d = await r.json();
     document.getElementById('envBadge').innerHTML = d.cuda
-      ? `<div class="env-badge"><div class="dot"></div>${d.gpu} (${d.vram}MB)</div>`
-      : `<div class="env-badge warn"><div class="dot"></div>CPU</div>`;
+      ? `<div class="env-badge" title="${escHtml(d.gpu)} (${d.vram}MB)"><div class="dot"></div><span class="env-full">${escHtml(d.gpu)} (${d.vram}MB)</span><span class="env-short">GPU</span></div>`
+      : `<div class="env-badge warn"><div class="dot"></div><span>CPU</span></div>`;
   } catch(e) {}
 }
 
@@ -556,13 +743,93 @@ async function loadAssets() {
       }
     });
     document.getElementById('missingAssetsWarn').style.display = (d.avatar.exists && d.voice.exists) ? 'none' : '';
+    renderMaterialLibrary(d.library || {avatar:[], voice:[]});
     const fb = document.getElementById('footballAssets');
     let h = '<div style="font-size:13px;color:var(--text-muted);">';
     if (d.football_assets?.folders?.length) {
-      h += d.football_assets.folders.map(f=>`<span style="display:inline-block;margin:3px;padding:4px 10px;background:var(--bg-input);border-radius:6px;font-size:12px;">&#128193; ${f}</span>`).join(' ');
+      h += d.football_assets.folders.map(f=>`<span style="display:inline-block;margin:3px;padding:4px 10px;background:var(--bg-input);border-radius:6px;font-size:12px;"><i class="ri-folder-line" aria-hidden="true"></i> ${f}</span>`).join(' ');
     } else { h += '暂无，将 B-roll 放入 assets/football/'; }
     h += '</div>'; fb.innerHTML = h;
   } catch(e) {}
+}
+
+function formatMaterialSize(bytes) {
+  if (!bytes) return '';
+  return bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)}KB` : `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
+function fillMaterialSelect(selectId, assets, selectedId, emptyLabel) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  const current = selectedId || select.value;
+  select.innerHTML = `${emptyLabel ? `<option value="">${escHtml(emptyLabel)}</option>` : ''}${assets.map(asset => `<option value="${asset.id}">${escHtml(asset.name)}</option>`).join('')}`;
+  if ([...select.options].some(option => option.value === current)) select.value = current;
+}
+
+function renderMaterialItems(kind, assets) {
+  const list = document.getElementById(kind+'MaterialList');
+  if (!list) return;
+  if (!assets.length) { list.innerHTML = '<div class="material-meta">暂无素材</div>'; return; }
+  list.innerHTML = assets.map(asset => {
+    const visual = kind === 'avatar'
+      ? `<img class="material-thumb" src="/api/materials/avatar/${asset.id}/file" alt="">`
+      : '<div class="material-icon"><i class="ri-volume-up-line" aria-hidden="true"></i></div>';
+    const meta = `${asset.filename} · ${formatMaterialSize(asset.size)}`;
+    const actions = `<button class="material-rename" onclick="renameMaterial('${kind}','${asset.id}')" title="修改名称" aria-label="修改名称"><i class="ri-pencil-line" aria-hidden="true"></i></button>${asset.system ? '' : `<button class="material-delete" onclick="deleteMaterial('${kind}','${asset.id}')" title="删除素材" aria-label="删除素材"><i class="ri-delete-bin-line" aria-hidden="true"></i></button>`}`;
+    return `<div class="material-item">${visual}<div class="material-info"><div class="material-name">${escHtml(asset.name)}</div><div class="material-meta">${escHtml(meta)}</div></div>${actions}</div>`;
+  }).join('');
+}
+
+function renderMaterialLibrary(library) {
+  materialLibrary = library;
+  const avatars = library.avatar || [];
+  const voices = library.voice || [];
+  fillMaterialSelect('avatarAsset', avatars, 'default-avatar');
+  fillMaterialSelect('voice', voices, 'default-voice');
+  renderMaterialItems('avatar', avatars);
+  renderMaterialItems('voice', voices);
+}
+
+async function uploadLibraryAvatar(file) {
+  if (!file) return;
+  const fd = new FormData(); fd.append('file', file); fd.append('name', document.getElementById('libraryAvatarName').value.trim() || file.name.replace(/\.[^.]+$/, ''));
+  try {
+    const r = await fetch('/api/materials/avatar', {method:'POST', body:fd}); const d = await readApiResponse(r);
+    document.getElementById('libraryAvatarName').value = ''; toast(`已添加人物素材：${d.asset.name}`, 'success');
+  } catch(e) { toast(e.message || String(e), 'error'); }
+  finally { document.getElementById('libraryAvatarFile').value = ''; await loadAssets(); }
+}
+
+async function uploadLibraryVoice(file) {
+  if (!file) return;
+  const referenceText = document.getElementById('libraryReferenceText').value.trim();
+  if (!referenceText) { toast('请填写参考音频原文', 'error'); document.getElementById('libraryVoiceFile').value = ''; return; }
+  const fd = new FormData(); fd.append('file', file); fd.append('name', document.getElementById('libraryVoiceName').value.trim() || file.name.replace(/\.[^.]+$/, '')); fd.append('reference_text', referenceText);
+  try {
+    const r = await fetch('/api/materials/voice', {method:'POST', body:fd}); const d = await readApiResponse(r);
+    document.getElementById('libraryVoiceName').value = ''; document.getElementById('libraryReferenceText').value = ''; toast(`已添加音频素材：${d.asset.name}`, 'success');
+  } catch(e) { toast(e.message || String(e), 'error'); }
+  finally { document.getElementById('libraryVoiceFile').value = ''; await loadAssets(); }
+}
+
+async function renameMaterial(kind, id) {
+  const currentName = (materialLibrary[kind] || []).find(asset => asset.id === id)?.name || '';
+  const name = prompt('修改素材名称', currentName);
+  if (name === null || !name.trim() || name.trim() === currentName) return;
+  const fd = new FormData(); fd.append('name', name.trim());
+  try { const r = await fetch(`/api/materials/${kind}/${id}`, {method:'PATCH',body:fd}); await readApiResponse(r); toast('素材名称已修改', 'success'); await loadAssets(); }
+  catch(e) { toast(e.message || String(e), 'error'); }
+}
+
+async function deleteMaterial(kind, id) {
+  const asset = (materialLibrary[kind] || []).find(item => item.id === id);
+  if (!asset || !confirm(`确定删除素材“${asset.name}”吗？此操作不可恢复。`)) return;
+  try {
+    const r = await fetch(`/api/materials/${kind}/${id}`, {method:'DELETE'});
+    await readApiResponse(r);
+    toast(`已删除素材：${asset.name}`, 'success');
+    await loadAssets();
+  } catch(e) { toast(e.message || String(e), 'error'); }
 }
 
 async function uploadAvatar(file) {
@@ -614,12 +881,16 @@ async function loadProjects() {
       const n = Object.values(p.steps).filter(s=>s.status==='done').length||0, f = Object.values(p.steps).some(s=>s.status==='failed');
       let bc='', bt='';
       if (p.has_video) { bc='status-done'; bt='已完成'; }
-      else if (f) { bc='status-failed'; bt='失败'; }
+      else if (p.status==='running') {
+        bc='status-partial';
+        bt=p.segment_count>1 ? `第 ${Math.max(1,p.current_segment||1)}/${p.segment_count} 段生成中` : '生成中';
+      }
+      else if (p.status==='failed' || f) { bc='status-failed'; bt='失败'; }
       else if (n>0) { bc='status-partial'; bt=`${n}/5`; }
       return `<div class="proj-card ${activeProject===p.name?'active':''}" onclick="selectProject('${p.name}')">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
           <div class="title" style="flex:1;margin-right:6px;">${escHtml(p.title||p.name)}</div>
-          <button class="btn-del" onclick="event.stopPropagation();deleteProject('${p.name}')" title="删除">&#10005;</button>
+          <button class="btn-del" onclick="event.stopPropagation();deleteProject('${p.name}')" title="删除" aria-label="删除项目"><i class="ri-close-line" aria-hidden="true"></i></button>
         </div>
         <div class="meta"><span>${p.created?p.created.slice(0,16):''}</span>${p.duration?`<span>${fmtDur(p.duration)}</span>`:''}</div>
         ${bt?`<div class="status-badge ${bc}">${bt}</div>`:''}
@@ -634,19 +905,20 @@ async function selectProject(name) {
   try {
     const r = await fetch(`/api/projects/${name}`); const p = await r.json();
     document.getElementById('previewLabel').textContent = p.metadata.title||name;
-    const src = p.files?.['final.mp4']?.url
+    const finalName = p.metadata.final_filename || (p.files?.['final.mp4'] ? 'final.mp4' : null);
+    const src = (finalName ? p.files?.[finalName]?.url : null)
       || p.files?.['packaged.mp4']?.url
       || p.files?.['talking.mp4']?.url
       || null;
     if (src) {
-      document.getElementById('previewContent').innerHTML = `<div class="preview-area"><video controls autoplay loop src="${src}"></video></div>
+      document.getElementById('previewContent').innerHTML = `<div class="preview-area"><video controls autoplay src="${src}"></video></div>
         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-          ${p.files['final.mp4']?`<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="window.open('/api/projects/${name}/files/final.mp4')">下载 Final</button>`:''}
-          ${p.files['audio.wav']?`<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="window.open('/api/projects/${name}/files/audio.wav')">音频</button>`:''}
-          ${p.files['subtitle.srt']?`<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="window.open('/api/projects/${name}/files/subtitle.srt')">字幕</button>`:''}
+          ${finalName && p.files[finalName]?`<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="window.open('${p.files[finalName].url}')"><i class="ri-download-line" aria-hidden="true"></i> 下载成片</button>`:''}
+          ${p.files['audio.wav']?`<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="window.open('/api/projects/${name}/files/audio.wav')"><i class="ri-volume-up-line" aria-hidden="true"></i> 音频</button>`:''}
+          ${p.files['subtitle.srt']?`<button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;" onclick="window.open('/api/projects/${name}/files/subtitle.srt')"><i class="ri-subtitle-line" aria-hidden="true"></i> 字幕</button>`:''}
         </div>`;
     } else {
-      document.getElementById('previewContent').innerHTML = `<div class="preview-area"><div class="preview-empty"><div class="icon">&#9203;</div><p>视频尚未生成</p></div></div>`;
+      document.getElementById('previewContent').innerHTML = `<div class="preview-area"><div class="preview-empty"><div class="icon"><i class="ri-time-line" aria-hidden="true"></i></div><p>视频尚未生成</p></div></div>`;
     }
   } catch(e) {}
 }
@@ -656,7 +928,7 @@ async function deleteProject(name) {
   try {
     const r = await fetch(`/api/projects/${name}`, { method: 'DELETE' });
     const d = await r.json();
-    if (d.ok) { toast('项目已删除', 'success'); if (activeProject === name) { activeProject = null; document.getElementById('previewContent').innerHTML = '<div class="preview-area"><div class="preview-empty"><div class="icon">&#127916;</div><p>选择项目或生成新视频后预览</p></div></div>'; } loadProjects(); }
+    if (d.ok) { toast('项目已删除', 'success'); if (activeProject === name) { activeProject = null; document.getElementById('previewContent').innerHTML = '<div class="preview-area"><div class="preview-empty"><div class="icon"><i class="ri-movie-2-line" aria-hidden="true"></i></div><p>选择项目或生成新视频后预览</p></div></div>'; } loadProjects(); }
     else { toast(d.error || '删除失败', 'error'); }
   } catch(e) { toast('删除失败: ' + e, 'error'); }
 }
@@ -665,36 +937,32 @@ async function doGenerate() {
   const title = document.getElementById('title').value.trim();
   const script = document.getElementById('script').value.trim();
   if (!title||!script) { toast('请填写标题和文案','error'); return; }
-  const btn = document.getElementById('genBtn'); btn.disabled = true; btn.innerHTML = '&#9203; 提交中...';
+  const btn = document.getElementById('genBtn'); btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line ri-spin" aria-hidden="true"></i> 提交中...';
   const fd = new FormData();
   fd.append('title',title); fd.append('script',script);
   fd.append('template', document.getElementById('template').value);
   fd.append('speed', document.getElementById('speed').value);
-  fd.append('voice', document.getElementById('voice').value);
-  fd.append('avatar_engine', document.getElementById('avatarEngine').value);
-  fd.append('motion_mode', document.getElementById('motionMode').value);
-  fd.append('motion_style', 'steady');
-  fd.append('motion_intensity', String(Number(document.getElementById('motionIntensity').value) / 100));
+  fd.append('voice', 'default');
+  fd.append('avatar_asset_id', document.getElementById('avatarAsset').value || 'default-avatar');
+  fd.append('voice_asset_id', document.getElementById('voice').value);
   fd.append('caption_style', document.getElementById('captionStyle').value);
-  fd.append('driver_profile', document.getElementById('driverProfile').value);
   fd.append('resume', 'true');
   try {
     const r = await fetch('/api/generate',{method:'POST',body:fd}); const d = await r.json();
-    if (d.error) { toast(d.error,'error'); btn.disabled=false; btn.innerHTML='&#9889; 开始生成视频'; return; }
+    if (d.error) { toast(d.error,'error'); btn.disabled=false; btn.innerHTML='<i class="ri-play-circle-line" aria-hidden="true"></i> 开始生成视频'; return; }
     currentTask = d.task_id;
+    loadProjects();
     document.getElementById('taskCard').style.display = 'block';
     document.getElementById('taskTitle').textContent = title;
     document.getElementById('taskStatus').textContent = '进行中';
-    initPipelineUI(); toast('流水线已启动','success');
+    initPipelineUI(); startTaskPolling(); toast('流水线已启动','success');
   } catch(e) { toast('提交失败: '+e,'error'); }
-  btn.disabled = false; btn.innerHTML = '&#9889; 开始生成视频';
+  btn.disabled = false; btn.innerHTML = '<i class="ri-play-circle-line" aria-hidden="true"></i> 开始生成视频';
 }
 
 function initPipelineUI(stepNames = null) {
-  const avatarStep = document.getElementById('avatarEngine').value === 'ditto' ? 'Ditto 真实数字人' : 'MuseTalk 1.5口型';
-  const motionStep = document.getElementById('motionMode').value === 'gesture' ? 'MimicMotion 手势动作' : 'LivePortrait 自然动作';
-  const names = stepNames || ['声音生成',motionStep,avatarStep,'字幕生成','1080p横屏合成','最终导出'];
-  document.getElementById('pipelineSteps').innerHTML = names.map((name, index) => `<div class="pipe-step pending" id="step-${name}"><div class="pipe-indicator">${index + 1}</div><div class="step-label"><div class="step-name">${STEP_ICONS[name] || ''} ${name}</div><div class="step-status">等待中</div></div></div>`).join('');
+  const names = stepNames || ['声音生成','Ditto 真实数字人','字幕生成','自适应比例合成','最终导出'];
+  document.getElementById('pipelineSteps').innerHTML = names.map((name, index) => `<div class="pipe-step pending" id="step-${name}"><div class="pipe-indicator">${index + 1}</div><div class="step-label"><div class="step-name"><i class="${STEP_ICONS[name] || 'ri-loader-line'}" aria-hidden="true"></i> ${name}</div><div class="step-status">等待中</div></div></div>`).join('');
   document.getElementById('logConsole').innerHTML = '';
 }
 
@@ -731,8 +999,24 @@ function copyTemplate(btn) {
 
 function escHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 function fmtDur(s) { return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }
-function updateCharCount() { document.getElementById('charCount').textContent = document.getElementById('script').value.length; }
-function openOutputs() { window.open('/api/projects'); }
+function spokenCharCount(text) { return text.replace(/\s/g, '').length; }
+function updateCharCount() {
+  const script = document.getElementById('script').value;
+  const count = spokenCharCount(script);
+  const speed = Number(document.getElementById('speed').value) || 1;
+  const seconds = Math.max(0, Math.round(count / (4.5 * speed)));
+  document.getElementById('charCount').textContent = count;
+  const estimate = document.getElementById('scriptEstimate');
+  estimate.textContent = `预计 ${seconds} 秒，建议 15-30 秒`;
+  estimate.style.color = seconds > 30 ? 'var(--warning)' : 'var(--text-muted)';
+}
+async function openOutputs() {
+  try {
+    const r = await fetch('/api/outputs/open', {method:'POST'});
+    const d = await readApiResponse(r);
+    toast(`已打开输出目录：${d.path}`, 'success');
+  } catch(e) { toast(e.message || String(e), 'error'); }
+}
 function toast(m,t) { const el=document.createElement('div'); el.className=`toast ${t}`; el.textContent=m; document.body.appendChild(el); setTimeout(()=>el.remove(),3000); }
 
 setInterval(()=>{ if (document.getElementById('panelCreate').style.display!=='none') loadProjects(); }, 10000);

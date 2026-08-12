@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 
 class DittoProviderTests(unittest.TestCase):
@@ -44,6 +45,41 @@ class DittoProviderTests(unittest.TestCase):
         self.assertIn(str(source), command)
         self.assertIn(str(audio), command)
         self.assertIn(str(output), command)
+
+    def test_run_ditto_stops_process_tree_after_timeout(self):
+        from app.backend.providers.avatar import run_ditto
+        import subprocess
+
+        process = MagicMock()
+        process.poll.return_value = None
+        process.wait.side_effect = subprocess.TimeoutExpired(["ditto"], 1)
+        with tempfile.TemporaryDirectory() as temporary:
+            log_path = Path(temporary) / "ditto.log"
+            with (
+                patch("app.backend.providers.avatar.subprocess.Popen", return_value=process),
+                patch("app.backend.providers.avatar.subprocess.run") as taskkill,
+                self.assertRaisesRegex(RuntimeError, "timed out"),
+            ):
+                run_ditto(["ditto"], log_path=log_path, timeout_seconds=1)
+
+        taskkill.assert_called_once_with(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            capture_output=True,
+            check=False,
+        )
+
+    def test_run_ditto_surfaces_nonzero_exit_with_log_tail(self):
+        from app.backend.providers.avatar import run_ditto
+
+        process = MagicMock()
+        process.wait.return_value = 9
+        with tempfile.TemporaryDirectory() as temporary:
+            log_path = Path(temporary) / "ditto.log"
+            with (
+                patch("app.backend.providers.avatar.subprocess.Popen", return_value=process),
+                self.assertRaisesRegex(RuntimeError, "code 9"),
+            ):
+                run_ditto(["ditto"], log_path=log_path)
 
 
 if __name__ == "__main__":

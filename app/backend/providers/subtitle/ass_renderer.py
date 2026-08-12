@@ -111,6 +111,9 @@ def write_animated_ass(
     output.parent.mkdir(parents=True, exist_ok=True)
     style = _STYLE_NAMES[preset]
     lines: list[str] = []
+    anchor_x = width // 2
+    anchor_y = height - int(height * 0.068)
+    anchor_tag = rf"\pos({anchor_x},{anchor_y})"
 
     for segment in subtitles:
         start = max(0.0, float(segment.get("start", 0.0)))
@@ -121,11 +124,11 @@ def write_animated_ass(
         if not phrase:
             continue
 
-        base_prefix = r"{\fad(120,100)\move(960,1024,960,1008,0,160)}"
+        base_prefix = rf"{{\fad(120,100){anchor_tag}}}"
         if preset == "pop":
-            base_prefix = r"{\fad(90,90)\fscx104\fscy104\t(0,150,\fscx100\fscy100)}"
+            base_prefix = rf"{{\fad(90,90){anchor_tag}\fscx104\fscy104\t(0,150,\fscx100\fscy100)}}"
         elif preset == "bar":
-            base_prefix = r"{\fad(100,100)\move(930,1010,960,1010,0,180)}| "
+            base_prefix = rf"{{\fad(100,100){anchor_tag}}}| "
 
         lines.append(
             f"Dialogue: 0,{_seconds_to_ass_time(start)},"
@@ -139,11 +142,11 @@ def write_animated_ass(
             word_end = min(end, float(word.get("end", end)))
             if word_end <= word_start:
                 continue
-            active_prefix = ""
+            active_prefix = rf"{{{anchor_tag}}}"
             if preset == "pop":
-                active_prefix = r"{\fscx108\fscy108\t(0,120,\fscx100\fscy100)}"
+                active_prefix = rf"{{{anchor_tag}\fscx108\fscy108\t(0,120,\fscx100\fscy100)}}"
             elif preset == "bar":
-                active_prefix = "| "
+                active_prefix = rf"{{{anchor_tag}}}| "
             lines.append(
                 f"Dialogue: 1,{_seconds_to_ass_time(word_start)},"
                 f"{_seconds_to_ass_time(word_end)},{style},,0,0,0,,"

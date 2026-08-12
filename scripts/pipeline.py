@@ -15,11 +15,12 @@ from typing import Optional
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-OUTPUTS_ROOT = (PROJECT_ROOT / "outputs").resolve()
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.backend.providers.media_utils import probe_media, validate_audio, validate_video
 from app.backend.providers.subtitle.ass_renderer import CAPTION_PRESETS
+from scripts.output_paths import OUTPUTS_ROOT, WORK_ROOT
+from scripts.output_dimensions import dimensions_for_avatar
 
 
 DRIVER_PROFILES = {
@@ -34,7 +35,8 @@ def get_timestamp() -> str:
 def sanitize_filename(name: str) -> str:
     for character in '<>:"/\\|?*':
         name = name.replace(character, "_")
-    return name.strip()[:50]
+    sanitized = name.strip(" .")[:50].rstrip(" .")
+    return sanitized or "AI口播视频"
 
 
 def build_motion_signature(
@@ -61,7 +63,7 @@ def build_motion_signature(
     return digest.hexdigest()
 
 
-def _resolve_project_dir(project_name: str, outputs_root: Path = OUTPUTS_ROOT) -> Path:
+def _resolve_project_dir(project_name: str, outputs_root: Path = WORK_ROOT) -> Path:
     outputs = Path(outputs_root).resolve()
     project = (outputs / project_name).resolve()
     if project == outputs or not project.is_relative_to(outputs):
@@ -69,9 +71,22 @@ def _resolve_project_dir(project_name: str, outputs_root: Path = OUTPUTS_ROOT) -
     return project
 
 
+def resolve_final_output_path(title: str, output_root: Path = OUTPUTS_ROOT) -> Path:
+    """Choose a non-destructive public MP4 path under the configured output root."""
+    root = Path(output_root).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    stem = sanitize_filename(title)
+    candidate = root / f"{stem}.mp4"
+    suffix = 2
+    while candidate.exists():
+        candidate = root / f"{stem}_{suffix}.mp4"
+        suffix += 1
+    return candidate
+
+
 def load_resume_metadata(
     project_name: str,
-    outputs_root: Path = OUTPUTS_ROOT,
+    outputs_root: Path = WORK_ROOT,
 ) -> dict:
     metadata_path = _resolve_project_dir(project_name, outputs_root) / "metadata.json"
     if not metadata_path.is_file():
@@ -82,7 +97,11 @@ def load_resume_metadata(
     return metadata
 
 
-def artifact_is_valid(step: str, path: Path) -> bool:
+def artifact_is_valid(
+    step: str,
+    path: Path,
+    expected_size: Optional[tuple[int, int]] = None,
+) -> bool:
     """Return whether a stage artifact is complete enough to resume from."""
     path = Path(path)
     try:
@@ -98,7 +117,7 @@ def artifact_is_valid(step: str, path: Path) -> bool:
             info = validate_video(path)
             return any(stream.get("codec_type") == "audio" for stream in info["streams"])
         if step in {"render", "export", "final"}:
-            info = validate_video(path, expected_size=(1920, 1080))
+            info = validate_video(path, expected_size=expected_size)
             return any(stream.get("codec_type") == "audio" for stream in info["streams"])
         if step == "subtitle":
             segments = json.loads(path.read_text(encoding="utf-8"))
@@ -149,6 +168,13 @@ class Pipeline:
         motion_intensity: float = 0.35,
         caption_style: str = "clean",
         driver_profile: str = "subtle_presenter",
+        avatar_path: Optional[str] = None,
+        voice_reference_path: Optional[str] = None,
+        voice_reference_text: Optional[str] = None,
+        avatar_asset_name: Optional[str] = None,
+        voice_asset_name: Optional[str] = None,
+        output_width: Optional[int] = None,
+        output_height: Optional[int] = None,
     ):
         if not script_text.strip():
             raise ValueError("The talking script cannot be empty")
@@ -177,6 +203,17 @@ class Pipeline:
         self.motion_intensity = float(motion_intensity)
         self.caption_style = caption_style
         self.driver_profile = driver_profile
+        self.avatar_path = Path(avatar_path).resolve() if avatar_path else PROJECT_ROOT / "avatar" / "avatar.jpg"
+        if output_width and output_height:
+            self.output_width, self.output_height = int(output_width), int(output_height)
+        else:
+            from PIL import Image
+            with Image.open(self.avatar_path) as avatar_image:
+                self.output_width, self.output_height = dimensions_for_avatar(*avatar_image.size)
+        self.voice_reference_path = Path(voice_reference_path).resolve() if voice_reference_path else None
+        self.voice_reference_text = (voice_reference_text or "").strip()
+        self.avatar_asset_name = (avatar_asset_name or "默认人物").strip()
+        self.voice_asset_name = (voice_asset_name or "").strip()
 
         self.project_dir = _resolve_project_dir(project_name)
         self.project_dir.mkdir(parents=True, exist_ok=True)
@@ -188,7 +225,6 @@ class Pipeline:
         self.subtitle_json = self.project_dir / "subtitle.json"
         self.subtitle_srt = self.project_dir / "subtitle.srt"
         self.packaged_file = self.project_dir / "packaged.mp4"
-        self.final_file = self.project_dir / "final.mp4"
         self.metadata_file = self.project_dir / "metadata.json"
 
         existing = {}
@@ -197,13 +233,21 @@ class Pipeline:
                 existing = json.loads(self.metadata_file.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
                 existing = {}
+        existing_final = Path(str(existing.get("final_path") or "")).resolve() if existing.get("final_path") else None
+        if existing_final and existing_final.is_relative_to(OUTPUTS_ROOT.resolve()):
+            self.final_file = existing_final
+        else:
+            self.final_file = resolve_final_output_path(title)
         self.metadata = {
             "title": title,
             "script": self.script_text,
             "created_at": existing.get("created_at", datetime.now().isoformat()),
             "updated_at": datetime.now().isoformat(),
             "voice_profile": voice_profile,
-            "avatar": "avatar/avatar.jpg",
+            "avatar": str(self.avatar_path),
+            "avatar_asset_name": self.avatar_asset_name,
+            "voice_asset_name": self.voice_asset_name,
+            "voice_reference_path": str(self.voice_reference_path) if self.voice_reference_path else "",
             "template": template,
             "avatar_engine": avatar_engine,
             "motion_mode": motion_mode,
@@ -211,13 +255,20 @@ class Pipeline:
             "motion_intensity": self.motion_intensity,
             "caption_style": caption_style,
             "driver_profile": driver_profile,
-            "output": "1920x1080, 25 fps, H.264/AAC",
+            "final_filename": self.final_file.name,
+            "final_path": str(self.final_file),
+            "output": f"{self.output_width}x{self.output_height}, 25 fps, H.264/AAC",
             "steps": existing.get("steps", {}),
         }
         self._save_metadata()
 
     def should_run(self, output_file: Path, step: str) -> bool:
-        if self.resume and artifact_is_valid(step, output_file):
+        expected_size = (
+            (self.output_width, self.output_height)
+            if step in {"render", "export", "final"}
+            else None
+        )
+        if self.resume and artifact_is_valid(step, output_file, expected_size=expected_size):
             print(f"  [resume] Valid {step} artifact: {output_file.name}")
             return False
         if self.resume and output_file.exists():
@@ -299,6 +350,8 @@ class Pipeline:
                     output_path=str(self.audio_file),
                     voice_profile=self.voice_profile,
                     speed=self.speed,
+                    reference_audio_path=str(self.voice_reference_path) if self.voice_reference_path else None,
+                    reference_text=self.voice_reference_text or None,
                 )
             finally:
                 unload_voice()
@@ -311,7 +364,7 @@ class Pipeline:
     def lipsync_input(self) -> Path:
         if self.motion_mode in {"natural", "gesture"}:
             return self.motion_file
-        return PROJECT_ROOT / "avatar" / "avatar.jpg"
+        return self.avatar_path
 
     def step2_motion(self) -> None:
         motion_label = (
@@ -330,7 +383,7 @@ class Pipeline:
             self.update_metadata("motion", "skipped")
             return
 
-        avatar = PROJECT_ROOT / "avatar" / "avatar.jpg"
+        avatar = self.avatar_path
         if not avatar.is_file():
             exc = FileNotFoundError(f"Avatar image does not exist: {avatar}")
             self._fail("motion", exc)
@@ -405,7 +458,7 @@ class Pipeline:
             self._finish("lipsync", self.talking_file, resumed=True)
             return
         avatar = (
-            PROJECT_ROOT / "avatar" / "avatar.jpg"
+            self.avatar_path
             if self.avatar_engine == "ditto"
             else self.lipsync_input
         )
@@ -464,7 +517,7 @@ class Pipeline:
             raise
 
     def step4_render(self) -> None:
-        self._start("render", "STEP 4: FFmpeg landscape render")
+        self._start("render", "STEP 4: FFmpeg final render")
         if not self.should_run(self.packaged_file, "render"):
             self._finish("render", self.packaged_file, resumed=True)
             return
@@ -475,8 +528,8 @@ class Pipeline:
                 talking_video=str(self.talking_file),
                 subtitle_json=str(self.subtitle_json),
                 output_path=str(self.packaged_file),
-                width=1920,
-                height=1080,
+                width=self.output_width,
+                height=self.output_height,
                 fps=25,
                 caption_style=self.caption_style,
             )
@@ -491,10 +544,14 @@ class Pipeline:
             self._finish("export", self.final_file, resumed=True)
             return
         try:
-            if not artifact_is_valid("render", self.packaged_file):
+            if not artifact_is_valid(
+                "render",
+                self.packaged_file,
+                expected_size=(self.output_width, self.output_height),
+            ):
                 raise RuntimeError(f"Rendered artifact is invalid: {self.packaged_file}")
             shutil.copy2(self.packaged_file, self.final_file)
-            info = validate_video(self.final_file, expected_size=(1920, 1080))
+            info = validate_video(self.final_file, expected_size=(self.output_width, self.output_height))
             self.metadata["duration_seconds"] = round(info["duration"], 3)
             self.metadata["file_size_mb"] = round(info["size"] / 1024**2, 2)
             self._finish("export", self.final_file)

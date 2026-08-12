@@ -7,7 +7,7 @@
 - 画面：1920x1080，25 fps，保留完整人物和背景
 - 视频：H.264，`yuv420p`，limited range
 - 音频：AAC
-- 文件：`outputs/<项目名>/final.mp4`
+- 文件：`E:\ai口播输出\<项目名>\<视频标题>.mp4`
 
 ## 首次准备
 
@@ -75,7 +75,7 @@ python scripts\pipeline.py `
 python scripts\pipeline.py --project acceptance --resume
 ```
 
-流水线只跳过通过媒体探测的完整产物；空文件或损坏文件会自动重新生成。每一步的状态、错误、日志路径和媒体摘要保存在 `outputs/<项目名>/metadata.json`。
+流水线只跳过通过媒体探测的完整产物；空文件或损坏文件会自动重新生成。每一步的状态、错误、日志路径和媒体摘要保存在 `E:\ai口播输出\<项目名>\metadata.json`。
 
 ## 单模块命令
 

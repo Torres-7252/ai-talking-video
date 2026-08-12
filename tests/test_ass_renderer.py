@@ -42,6 +42,18 @@ class AnimatedAssTests(unittest.TestCase):
                 )
                 self.assertGreater(output.stat().st_size, 300)
 
+    def test_portrait_caption_layers_share_the_same_anchor(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "portrait.ass"
+            ass_renderer.write_animated_ass(
+                [self.segment], output, preset="clean", width=1080, height=1920
+            )
+            content = output.read_text(encoding="utf-8-sig")
+
+        dialogue_lines = [line for line in content.splitlines() if line.startswith("Dialogue:")]
+        self.assertTrue(dialogue_lines)
+        self.assertTrue(all(r"\pos(540,1790)" in line for line in dialogue_lines))
+
     def test_unknown_preset_is_rejected(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             with self.assertRaisesRegex(ValueError, "caption preset"):
