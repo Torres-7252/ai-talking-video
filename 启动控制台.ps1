@@ -8,7 +8,12 @@ Write-Host "  Ditto | GPT-SoVITS | 1920x1080 | 25 fps" -ForegroundColor DarkCyan
 Write-Host ""
 
 $CandidatePythons = @(
+    (Join-Path $ProjectRoot ".venv-liveportrait\Scripts\python.exe"),
     (Join-Path $ProjectRoot ".venv-web\Scripts\python.exe")
+)
+
+$CandidatePythons += @(
+    (Join-Path $ProjectRoot ".venv-mimicmotion\Scripts\python.exe")
 )
 
 $PyLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
@@ -19,11 +24,6 @@ if ($PyLauncher) {
         }
     }
 }
-
-$CandidatePythons += @(
-    (Join-Path $ProjectRoot ".venv-liveportrait\Scripts\python.exe"),
-    (Join-Path $ProjectRoot ".venv-mimicmotion\Scripts\python.exe")
-)
 $SystemPython = Get-Command python.exe -ErrorAction SilentlyContinue
 if ($SystemPython) {
     $CandidatePythons += $SystemPython.Source

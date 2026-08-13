@@ -21,6 +21,13 @@ class WebLauncherTests(unittest.TestCase):
         self.assertIn('$ErrorActionPreference = "SilentlyContinue"', self.script)
         self.assertIn("& $WebPython scripts\\web_server.py", self.script)
 
+    def test_launcher_prioritizes_the_project_runtime_over_system_python(self):
+        project_runtime = '(Join-Path $ProjectRoot ".venv-liveportrait\\Scripts\\python.exe")'
+        self.assertLess(
+            self.script.index(project_runtime),
+            self.script.index("Get-Command py.exe"),
+        )
+
     def test_failed_generation_preflight_does_not_block_asset_upload_console(self):
         self.assertIn("The console will still start so assets can be managed", self.script)
 
