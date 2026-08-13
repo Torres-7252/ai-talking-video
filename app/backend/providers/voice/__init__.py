@@ -262,6 +262,38 @@ def _normalize_tts_text(text: str) -> str:
     return normalized
 
 
+def _split_tts_text(text: str) -> list[tuple[str, str]]:
+    """Split Chinese narration from English terms without invoking auto detection."""
+    has_chinese = bool(re.search(r"[\u3400-\u9fff]", text))
+    has_english = bool(re.search(r"[A-Za-z]", text))
+    if not has_chinese or not has_english:
+        return [(text, "en" if has_english else "zh")]
+
+    english_term = re.compile(
+        r"(?=[A-Za-z0-9._-]*[A-Za-z])[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*"
+    )
+    parts: list[tuple[str, str]] = []
+    cursor = 0
+    for match in english_term.finditer(text):
+        if match.start() > cursor:
+            parts.append((text[cursor : match.start()], "zh"))
+        parts.append((match.group(), "en"))
+        cursor = match.end()
+    if cursor < len(text):
+        parts.append((text[cursor:], "zh"))
+
+    normalized: list[tuple[str, str]] = []
+    for part, language in parts:
+        if not part.strip():
+            continue
+        if language == "zh" and not re.search(r"[\u3400-\u9fff]", part) and normalized:
+            previous_text, previous_language = normalized[-1]
+            normalized[-1] = (previous_text + part, previous_language)
+        else:
+            normalized.append((part, language))
+    return normalized
+
+
 def _join_generated_audio(generated: list) -> tuple[int, np.ndarray]:
     if not generated:
         raise RuntimeError("GPT-SoVITS returned no audio")
@@ -317,44 +349,62 @@ def generate_voice(
     else:
         profile = load_voice_profile(voice_profile)
     reference_audio = _prepare_reference_audio(profile["reference_audio"])
-    tts = _get_tts()
 
     print(f"  [voice] Generating: {clean_text[:30]}... -> {output.name}")
-    minimum_duration = _minimum_generated_duration(clean_text, speed)
-    failure_details = []
-    for attempt, seed in enumerate(TTS_RETRY_SEEDS, start=1):
-        payload = {
-            "text": clean_text,
-            "text_lang": "zh",
-            "ref_audio_path": str(reference_audio),
-            "prompt_lang": profile["language"],
-            "prompt_text": profile["reference_text"],
-            "text_split_method": "cut5",
-            "batch_size": 1,
-            "media_type": "wav",
-            "streaming_mode": False,
-            "speed_factor": speed,
-            "seed": seed,
-            "parallel_infer": False,
-        }
+    generated_segments: list[np.ndarray] = []
+    sample_rate: Optional[int] = None
+    for segment_text, text_lang in _split_tts_text(clean_text):
+        tts = _get_tts()
+        minimum_duration = _minimum_generated_duration(segment_text, speed)
+        failure_details = []
         try:
-            sample_rate, audio = _join_generated_audio(_run_tts(tts, payload))
-        except RuntimeError as exc:
-            failure_details.append(str(exc))
-            continue
-        duration = len(audio) / sample_rate
-        if duration >= minimum_duration:
-            break
-        failure_details.append(
-            f"attempt {attempt} produced only {duration:.1f}s "
-            f"(minimum {minimum_duration:.1f}s)"
-        )
-        print(f"  [voice] Retrying: {failure_details[-1]}")
-    else:
-        raise RuntimeError(
-            "GPT-SoVITS did not produce complete speech after "
-            f"{len(TTS_RETRY_SEEDS)} attempts: {'; '.join(failure_details)}"
-        )
+            for attempt, seed in enumerate(TTS_RETRY_SEEDS, start=1):
+                payload = {
+                    "text": segment_text,
+                    "text_lang": text_lang,
+                    "ref_audio_path": str(reference_audio),
+                    "prompt_lang": profile["language"],
+                    "prompt_text": profile["reference_text"],
+                    "text_split_method": "cut5",
+                    "batch_size": 1,
+                    "media_type": "wav",
+                    "streaming_mode": False,
+                    "speed_factor": speed,
+                    "seed": seed,
+                    "parallel_infer": False,
+                }
+                try:
+                    current_rate, audio = _join_generated_audio(_run_tts(tts, payload))
+                except RuntimeError as exc:
+                    failure_details.append(str(exc))
+                    continue
+                duration = len(audio) / current_rate
+                if duration >= minimum_duration:
+                    break
+                failure_details.append(
+                    f"attempt {attempt} produced only {duration:.1f}s "
+                    f"(minimum {minimum_duration:.1f}s)"
+                )
+                print(f"  [voice] Retrying: {failure_details[-1]}")
+            else:
+                raise RuntimeError(
+                    f"GPT-SoVITS could not synthesize {text_lang} segment "
+                    f"{segment_text!r}: {'; '.join(failure_details)}"
+                )
+        finally:
+            unload_voice()
+        if sample_rate is None:
+            sample_rate = current_rate
+        elif current_rate != sample_rate:
+            raise RuntimeError("GPT-SoVITS returned inconsistent sample rates")
+        generated_segments.append(audio)
+
+    if sample_rate is None or not generated_segments:
+        raise RuntimeError("GPT-SoVITS returned no audio")
+    pause = np.zeros(int(sample_rate * 0.08), dtype=generated_segments[0].dtype)
+    audio = np.concatenate(
+        [chunk for pair in zip(generated_segments, [pause] * len(generated_segments)) for chunk in pair][:-1]
+    )
 
     sf.write(str(output), audio, sample_rate)
     info = validate_audio(output)

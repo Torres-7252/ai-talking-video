@@ -222,6 +222,66 @@ class VoiceProviderTests(unittest.TestCase):
         self.assertEqual(written_rate, sample_rate)
         self.assertEqual(len(written), sample_rate * 4)
 
+    def test_mixed_chinese_and_english_is_split_into_explicit_languages(self):
+        self.assertEqual(
+            voice._split_tts_text("使用 GPT 和 DeepSeek 完成 API 项目。"),
+            [
+                ("使用 ", "zh"),
+                ("GPT", "en"),
+                (" 和 ", "zh"),
+                ("DeepSeek", "en"),
+                (" 完成 ", "zh"),
+                ("API", "en"),
+                (" 项目。", "zh"),
+            ],
+        )
+
+    def test_mixed_language_split_attaches_separator_to_the_preceding_term(self):
+        self.assertEqual(
+            voice._split_tts_text("使用 agent，DeepSeek 完成项目。"),
+            [
+                ("使用 ", "zh"),
+                ("agent，", "en"),
+                ("DeepSeek", "en"),
+                (" 完成项目。", "zh"),
+            ],
+        )
+
+    def test_mixed_chinese_and_english_sends_english_chunks_to_english_frontend(self):
+        sample_rate = 24000
+        generated = [(sample_rate, np.zeros(sample_rate * 4))]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            reference = root / "reference.wav"
+            reference.touch()
+            output = root / "speech.wav"
+            with (
+                mock.patch(
+                    "voice.load_voice_profile",
+                    return_value={
+                        "reference_audio": reference,
+                        "reference_text": "reference transcript",
+                        "language": "zh",
+                    },
+                ),
+                mock.patch("voice.load_configured_voice_profile", return_value={}),
+                mock.patch("voice._prepare_reference_audio", return_value=reference),
+                mock.patch("voice._get_tts", return_value=object()) as get_tts,
+                mock.patch("voice._run_tts", return_value=generated) as run_tts,
+                mock.patch("voice.unload_voice") as unload_tts,
+                mock.patch(
+                    "voice.validate_audio",
+                    return_value={"size": 192044, "duration": 4.0},
+                ),
+            ):
+                voice.generate_voice("使用 GPT 和 DeepSeek 一起完成项目", str(output))
+
+        languages = [call.args[1]["text_lang"] for call in run_tts.call_args_list]
+        self.assertEqual(languages, ["zh", "en", "zh", "en", "zh"])
+        self.assertEqual(get_tts.call_count, 5)
+        self.assertEqual(unload_tts.call_count, 5)
+
     def test_reference_window_uses_matching_asr_timestamps(self):
         result = [
             {
